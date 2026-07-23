@@ -1,0 +1,117 @@
+name: Warm build cache
+
+# Compiling Bevy and Rapier from scratch is the whole cost of a release — once
+# their artifacts are cached, only our own crate recompiles, in seconds. But
+# GitHub scopes caches by git ref: a tag run (which is what Release is) can only
+# restore caches created under that same tag or under the default branch, never
+# under a sibling tag. So a release's linux/windows/macos jobs never find a warm
+# cache, because nothing on main ever built those targets. This workflow does,
+# on main, whenever the dependency set changes.
+#
+# The trick is that Swatinem/rust-cache keys on the job name and `key:`, not the
+# workflow name. These jobs deliberately mirror the Release jobs' names, keys,
+# runners, toolchain, and build commands, so the caches they write on main are
+# byte-for-byte the ones the Release jobs look for. (This is already why the
+# release's `web` job is fast: CI builds `web` on main. These three close the
+# gap.) Keep the four jobs below in lockstep with release.yml.
+#
+# It runs only when dependencies change, since that is the only thing that
+# invalidates the cached artifacts. Between dependency bumps, releases restore
+# the cache this last produced.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - mise.toml
+      - .github/workflows/warm-cache.yml
+  workflow_dispatch:
+
+concurrency:
+  group: warm-cache
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  web:
+    name: Warm web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Bevy's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+
+      - run: mise run build:web
+
+  linux:
+    name: Warm Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Bevy's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux
+
+      - run: cargo build --release --target x86_64-unknown-linux-gnu
+
+  windows:
+    name: Warm Windows (x86_64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+
+      - run: cargo build --release --target x86_64-pc-windows-msvc
+
+  macos:
+    name: Warm macOS (universal)
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - name: Add Apple targets
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos
+
+      - run: |
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin

@@ -98,3 +98,10 @@ mise.toml      toolchain pins, env, and every task
 - Release builds use `lto = "thin"` and `codegen-units = 1`; the web profile
   (`wasm-release`) additionally optimises for size, since download time is the
   thing players actually feel.
+- The `Warm build cache` workflow rebuilds Bevy and Rapier on `main` whenever
+  the dependency set changes, so the tag-triggered `Release` builds restore a
+  warm cache instead of compiling the engine from scratch (~40 min → a few).
+  Its four jobs mirror the Release build jobs' ids, cache keys, runners, and
+  build commands on purpose — GitHub scopes caches by git ref, so a warm cache
+  only reaches a tag run if it was written on the default branch under the same
+  job id and key. Keep the two in lockstep, or releases silently go cold again.
