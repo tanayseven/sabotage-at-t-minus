@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Sabotage at T-Minus</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0d12;
+        color: #d7dbe4;
+        font-family: system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+      #loading {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+      }
+      #loading[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">Loading…</div>
+    <canvas id="game-canvas"></canvas>
+    <script type="module">
+      import init from "./game.js";
+
+      const loading = document.getElementById("loading");
+      try {
+        await init();
+        loading.hidden = true;
+      } catch (error) {
+        // Bevy's winit backend throws a control-flow exception on startup by
+        // design; anything else is a genuine failure worth surfacing.
+        if (!`${error}`.includes("Using exceptions for control flow")) {
+          loading.textContent = "Failed to load. See the browser console.";
+          throw error;
+        }
+        loading.hidden = true;
+      }
+    </script>
+  </body>
+</html>

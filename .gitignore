@@ -1,0 +1,10 @@
+/target
+/dist
+mise.local.toml
+.mise.local.toml
+*.log
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

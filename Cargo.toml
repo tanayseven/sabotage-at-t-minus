@@ -1,0 +1,32 @@
+[package]
+name = "sabotage-at-t-minus"
+version = "0.1.0"
+edition = "2024"
+description = "A game built with the Bevy engine."
+publish = false
+
+[dependencies]
+bevy = "0.19"
+
+[features]
+# `cargo run --features dev` — hot-ish iteration: Bevy links dynamically so
+# only this crate is relinked on each edit. Never enable it for shipping builds.
+dev = ["bevy/dynamic_linking", "bevy/bevy_dev_tools"]
+
+# Our own code is worth optimising a little in dev; dependencies (Bevy, wgpu)
+# are optimised fully, since we recompile them approximately never.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true
+
+# Web builds pay for every byte of download, so trade a little speed for size.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"

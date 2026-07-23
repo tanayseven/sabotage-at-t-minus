@@ -1,0 +1,80 @@
+[tools]
+rust = { version = "1.97.1", profile = "default", components = "rustfmt,clippy,rust-src", targets = "wasm32-unknown-unknown" }
+# Must stay in lockstep with the `wasm-bindgen` version in Cargo.lock, or the
+# generated JS glue and the .wasm disagree at runtime.
+"cargo:wasm-bindgen-cli" = "0.2.126"
+# itch.io's upload/patching CLI. The `ubi` backend is deprecated in favour of
+# `github`, but as of mise 2026.5.3 that one extracts butler without the
+# executable bit, so it fails with EACCES. Revisit when mise fixes it.
+"ubi:itchio/butler" = "15.29.0"
+
+[env]
+# Where `mise run build:*` drops shippable artifacts.
+DIST_DIR = "{{config_root}}/dist"
+# itch.io target for `butler push` (see `mise run publish:*`).
+ITCH_USER = "tanayseven"
+ITCH_GAME = "sabotage-at-t-minus"
+
+[tasks.run]
+description = "Run the game natively with fast-iteration settings"
+run = "cargo run"
+
+[tasks.fmt]
+description = "Format all Rust source"
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "Check formatting without writing"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+# Deliberately not --all-features: the `dev` feature only exists for local
+# iteration, and linting a dynamically-linked build tells us nothing useful.
+description = "Clippy across all targets, warnings are errors"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.test]
+description = "Run the test suite"
+run = "cargo test"
+
+[tasks.ci]
+description = "Everything CI runs, locally"
+depends = ["fmt:check", "lint", "test"]
+
+[tasks."build:native"]
+description = "Release build for the host platform"
+run = "cargo build --release"
+
+[tasks."build:web"]
+description = "Release wasm build + wasm-bindgen glue + assets into dist/web"
+# mise runs tasks under `sh`, which has no `pipefail`.
+shell = "bash -c"
+run = """
+set -euo pipefail
+out="$DIST_DIR/web"
+rm -rf "$out" && mkdir -p "$out"
+cargo build --profile wasm-release --target wasm32-unknown-unknown
+wasm-bindgen \
+  --out-dir "$out" \
+  --out-name game \
+  --target web \
+  --no-typescript \
+  target/wasm32-unknown-unknown/wasm-release/sabotage-at-t-minus.wasm
+cp web/index.html "$out/index.html"
+cp -r assets "$out/assets"
+echo "built -> $out"
+"""
+
+[tasks."serve:web"]
+description = "Build for web and serve it on http://localhost:8080"
+depends = ["build:web"]
+run = "python3 -m http.server 8080 --directory $DIST_DIR/web"
+
+[tasks."publish:web"]
+description = "Push dist/web to the itch.io html5 channel"
+depends = ["build:web"]
+run = "butler push $DIST_DIR/web $ITCH_USER/$ITCH_GAME:html5"
+
+[tasks.clean]
+description = "Remove build and dist output"
+run = "cargo clean && rm -rf $DIST_DIR"

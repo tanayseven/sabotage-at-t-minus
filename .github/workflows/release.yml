@@ -1,0 +1,246 @@
+name: Release
+
+# Tag a commit (`git tag v0.1.0 && git push --tags`) to build every platform,
+# push each one to its itch.io channel, and cut a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish as, without a leading v (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY: sabotage-at-t-minus
+
+jobs:
+  meta:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $version"
+
+  web:
+    name: Build web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Bevy's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+
+      - run: mise run build:web
+
+      # Artifacts are re-zipped by `actions/upload-artifact` in a way that drops
+      # the executable bit, so every platform travels as a tarball instead.
+      - name: Package
+        run: tar -czf web.tar.gz -C dist/web .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web.tar.gz
+          retention-days: 7
+
+  linux:
+    name: Build Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Bevy's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux
+
+      - run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Package
+        run: |
+          mkdir -p dist/linux
+          cp "target/x86_64-unknown-linux-gnu/release/$BINARY" dist/linux/
+          cp -r assets dist/linux/assets
+          tar -czf linux.tar.gz -C dist/linux .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: linux.tar.gz
+          retention-days: 7
+
+  windows:
+    name: Build Windows (x86_64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+
+      - run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Package
+        run: |
+          mkdir -p dist/windows
+          cp "target/x86_64-pc-windows-msvc/release/$BINARY.exe" dist/windows/
+          cp -r assets dist/windows/assets
+          tar -czf windows.tar.gz -C dist/windows .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: windows.tar.gz
+          retention-days: 7
+
+  macos:
+    name: Build macOS (universal)
+    runs-on: macos-latest
+    needs: [meta]
+    env:
+      APP_NAME: Sabotage at T-Minus
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: rust
+
+      - name: Add Apple targets
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos
+
+      - run: |
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+
+      # A bare Mach-O binary is close to unlaunchable for players, so ship a
+      # minimal .app bundle. Bevy resolves `assets` relative to the executable,
+      # which inside a bundle means Contents/MacOS.
+      - name: Package as .app bundle
+        run: |
+          app="dist/mac/$APP_NAME.app"
+          mkdir -p "$app/Contents/MacOS"
+          lipo -create -output "$app/Contents/MacOS/$BINARY" \
+            "target/x86_64-apple-darwin/release/$BINARY" \
+            "target/aarch64-apple-darwin/release/$BINARY"
+          chmod +x "$app/Contents/MacOS/$BINARY"
+          cp -r assets "$app/Contents/MacOS/assets"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>$APP_NAME</string>
+            <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+            <key>CFBundleIdentifier</key><string>io.itch.tanayseven.$BINARY</string>
+            <key>CFBundleExecutable</key><string>$BINARY</string>
+            <key>CFBundleVersion</key><string>${{ needs.meta.outputs.version }}</string>
+            <key>CFBundleShortVersionString</key><string>${{ needs.meta.outputs.version }}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          tar -czf mac.tar.gz -C dist/mac .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: mac.tar.gz
+          retention-days: 7
+
+  publish:
+    name: Publish to itch.io and GitHub
+    runs-on: ubuntu-latest
+    needs: [meta, web, linux, windows, macos]
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      ITCH_TARGET: tanayseven/sabotage-at-t-minus
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Unpack every platform
+        run: |
+          for platform in web linux windows mac; do
+            mkdir -p "dist/$platform"
+            tar -xzf "artifacts/$platform/$platform.tar.gz" -C "dist/$platform"
+          done
+          find dist -maxdepth 2
+
+      # Only butler is needed here; skip installing the Rust toolchain.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: "ubi:itchio/butler"
+
+      - name: Push builds to itch.io
+        run: |
+          set -euo pipefail
+          for platform in html5:web linux:linux windows:windows mac:mac; do
+            channel="${platform%%:*}"
+            dir="dist/${platform##*:}"
+            echo "::group::butler push $dir -> $ITCH_TARGET:$channel"
+            mise exec -- butler push "$dir" "$ITCH_TARGET:$channel" \
+              --userversion "$VERSION"
+            echo "::endgroup::"
+          done
+
+      - name: Build release archives
+        run: |
+          mkdir -p release
+          tar -czf "release/$BINARY-$VERSION-linux-x86_64.tar.gz" -C dist/linux .
+          tar -czf "release/$BINARY-$VERSION-macos-universal.tar.gz" -C dist/mac .
+          (cd dist/windows && zip -qr "../../release/$BINARY-$VERSION-windows-x86_64.zip" .)
+          (cd dist/web && zip -qr "../../release/$BINARY-$VERSION-web.zip" .)
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release/*
+          generate_release_notes: true
