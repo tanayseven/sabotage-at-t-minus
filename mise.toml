@@ -1,3 +1,12 @@
+[settings]
+# Pin every tool to an exact version + checksum in mise.lock and fail the
+# install if what's fetched doesn't match. Keeps this project reproducible
+# even if the global mise config ever turns lockfiles off.
+lockfile = true
+# Paranoid mode: extra-strict security — verify checksums/signatures and
+# refuse anything mise can't vouch for, rather than warning and continuing.
+paranoid = true
+
 [tools]
 rust = { version = "1.97.1", profile = "default", components = "rustfmt,clippy,rust-src", targets = "wasm32-unknown-unknown" }
 # Must stay in lockstep with the `wasm-bindgen` version in Cargo.lock, or the
