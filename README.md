@@ -1,6 +1,7 @@
 # Sabotage at T-Minus
 
-A game built with [Bevy](https://bevy.org). Rust toolchain and dev tooling are
+A game built with [Bevy](https://bevy.org) and
+[Rapier](https://rapier.rs) for 2D physics. Rust toolchain and dev tooling are
 pinned with [mise](https://mise.jdx.dev); CI builds for web, Linux, Windows and
 macOS and publishes to [itch.io](https://itch.io).
 
@@ -26,8 +27,9 @@ cargo run --features dev
 ```
 
 The `dev` feature links Bevy dynamically, so an edit to `src/` relinks in
-seconds instead of recompiling the engine. Never ship a build made with it —
-the binary depends on `libbevy_dylib.so` sitting next to it.
+seconds instead of recompiling the engine. It also turns on Rapier's debug
+renderer, which draws every collider as a wireframe. Never ship a build made
+with it — the binary depends on `libbevy_dylib.so` sitting next to it.
 
 ## Tasks
 
@@ -84,6 +86,13 @@ mise.toml      toolchain pins, env, and every task
 
 ## Notes
 
+- `bevy_rapier2d` is pinned to a version built against this Bevy release; the
+  two have to be bumped together, and the crate's `CHANGELOG.md` is the place
+  to check which Bevy version a given release targets.
+- Physics runs in world units, with `PIXELS_PER_METER` in `src/main.rs` telling
+  Rapier how those units map onto the metre-scale its solver is tuned for.
+  Gravity is set explicitly rather than left at Rapier's default, because a
+  realistic 1g falls too slowly to read as a platformer.
 - `wasm-bindgen-cli` in `mise.toml` must match the `wasm-bindgen` version in
   `Cargo.lock`. When you bump Bevy, check the lockfile and update the pin.
 - Release builds use `lto = "thin"` and `codegen-units = 1`; the web profile
