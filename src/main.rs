@@ -1,5 +1,7 @@
 mod camera;
 mod config;
+mod countdown;
+mod gameover;
 mod menu;
 mod physics;
 mod platform;
@@ -19,6 +21,8 @@ use bevy_rapier2d::prelude::*;
 
 use crate::camera::setup_camera;
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
+use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
+use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player};
@@ -52,6 +56,7 @@ fn main() {
 
     app.init_state::<GameState>()
         .add_sub_state::<PlayingState>()
+        .init_resource::<MissionTimer>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
         .add_systems(
@@ -62,10 +67,11 @@ fn main() {
         .add_systems(OnEnter(GameState::Menu), spawn_menu)
         .add_systems(Update, menu_action.run_if(in_state(GameState::Menu)))
         .add_systems(OnExit(GameState::Menu), despawn_menu)
-        .add_systems(OnEnter(GameState::Playing), setup)
+        .add_systems(OnEnter(GameState::Playing), (setup, reset_mission_timer))
         .add_systems(
             Update,
-            (move_player, jump, open_quit_dialog).run_if(in_state(PlayingState::Running)),
+            (move_player, jump, open_quit_dialog, tick_countdown)
+                .run_if(in_state(PlayingState::Running)),
         )
         .add_systems(OnExit(GameState::Playing), despawn_game)
         .add_systems(
@@ -79,6 +85,18 @@ fn main() {
         .add_systems(
             OnExit(PlayingState::ConfirmQuit),
             (despawn_quit_dialog, resume_physics),
+        )
+        .add_systems(
+            OnEnter(PlayingState::GameOver),
+            (spawn_game_over, pause_physics),
+        )
+        .add_systems(
+            Update,
+            game_over_action.run_if(in_state(PlayingState::GameOver)),
+        )
+        .add_systems(
+            OnExit(PlayingState::GameOver),
+            (despawn_game_over, resume_physics),
         )
         .add_systems(Update, (button_visuals, sync_ui_scale))
         .run();
