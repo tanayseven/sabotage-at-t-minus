@@ -19,4 +19,7 @@ pub enum PlayingState {
     #[default]
     Running,
     ConfirmQuit,
+    /// The mission clock hit zero. Terminal for the run: gameplay and physics
+    /// stay down until the player goes back to the menu.
+    GameOver,
 }

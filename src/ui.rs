@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
+use crate::countdown::spawn_countdown;
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
@@ -17,6 +18,7 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.45, 0.60);
 
 const HUD_QUIT_SIZE: Vec2 = Vec2::new(120.0, 44.0);
 const HUD_QUIT_FONT: f32 = 22.0;
+const HUD_COUNTDOWN_FONT: f32 = 30.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
 const BACK_BUTTON_FONT: f32 = 24.0;
@@ -103,11 +105,14 @@ pub fn spawn_hud(commands: &mut Commands) {
                 position_type: PositionType::Absolute,
                 top: px(16),
                 right: px(16),
+                // The countdown stacks under the quit button in this corner.
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
         ))
         .with_children(|parent| {
             spawn_button(parent, "Quit", QuitButton, HUD_QUIT_SIZE, HUD_QUIT_FONT);
+            spawn_countdown(parent, HUD_COUNTDOWN_FONT);
         });
 }
 

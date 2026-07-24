@@ -39,5 +39,10 @@ pub const PLAYER_FRAME_SIZE: f32 = ART_FRAME * PLAYER_HEIGHT / ART_FIGURE_HEIGHT
 /// [`Anchor`]: bevy::sprite::Anchor
 pub const PLAYER_ART_ANCHOR: f32 = -0.5 + (PLAYER_HEIGHT / 2.0) / PLAYER_FRAME_SIZE;
 
+/// How long a run lasts before the launch clock hits zero.
+pub const MISSION_SECONDS: f32 = 120.0;
+/// Remaining time at which the HUD countdown switches to the alert colour.
+pub const URGENT_SECONDS: f32 = 10.0;
+
 pub const WALL_THICKNESS: f32 = 40.0;
 pub const PLATFORM_HEIGHT: f32 = 32.0;
