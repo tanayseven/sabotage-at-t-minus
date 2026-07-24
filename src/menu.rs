@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 
 use crate::state::GameState;
-use crate::ui::{ACCENT, spawn_button};
-
-const BACKDROP: Color = Color::srgb(0.08, 0.09, 0.12);
+use crate::ui::{ACCENT, BACKDROP, spawn_button};
 
 const MENU_BUTTON_SIZE: Vec2 = Vec2::new(260.0, 64.0);
 const MENU_BUTTON_FONT: f32 = 28.0;
@@ -14,16 +12,26 @@ pub struct MenuScreen;
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub enum MenuButton {
     Play,
+    Options,
+    Credits,
     #[cfg(not(target_arch = "wasm32"))]
     Quit,
 }
 
 #[cfg(target_arch = "wasm32")]
-const MENU_BUTTONS: [(&str, MenuButton); 1] = [("Play", MenuButton::Play)];
+const MENU_BUTTONS: [(&str, MenuButton); 3] = [
+    ("Play", MenuButton::Play),
+    ("Options", MenuButton::Options),
+    ("Credits", MenuButton::Credits),
+];
 
 #[cfg(not(target_arch = "wasm32"))]
-const MENU_BUTTONS: [(&str, MenuButton); 2] =
-    [("Play", MenuButton::Play), ("Quit", MenuButton::Quit)];
+const MENU_BUTTONS: [(&str, MenuButton); 4] = [
+    ("Play", MenuButton::Play),
+    ("Options", MenuButton::Options),
+    ("Credits", MenuButton::Credits),
+    ("Quit", MenuButton::Quit),
+];
 
 pub fn spawn_menu(mut commands: Commands) {
     commands
@@ -35,7 +43,7 @@ pub fn spawn_menu(mut commands: Commands) {
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: px(28),
+                row_gap: px(20),
                 ..default()
             },
             BackgroundColor(BACKDROP),
@@ -85,6 +93,8 @@ pub fn menu_action(
 
     match chosen {
         Some(MenuButton::Play) => next_state.set(GameState::Playing),
+        Some(MenuButton::Options) => next_state.set(GameState::Options),
+        Some(MenuButton::Credits) => next_state.set(GameState::Credits),
         #[cfg(not(target_arch = "wasm32"))]
         Some(MenuButton::Quit) => {
             exit.write(AppExit::Success);

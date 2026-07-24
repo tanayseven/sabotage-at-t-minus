@@ -6,13 +6,57 @@ description = "A game built with the Bevy engine."
 publish = false
 
 [dependencies]
-bevy = "0.19"
+# Bevy's defaults bundle the whole 3D stack (PBR, glTF, anti-aliasing, morph
+# targets, KTX2/zstd) plus platform extras this game never touches. That was
+# most of the wasm download, so we spell out what we actually use.
+#
+# Deliberately absent, and why:
+#   3d / bevy_pbr / bevy_gltf  — this is a 2D game
+#   scene                      — no scene assets; nothing is deserialised
+#   bevy_gilrs / gamepad       — keyboard and mouse only
+#   sysinfo_plugin             — only logged a SystemInfo line at startup
+#   bevy_clipboard             — no text input anywhere
+#   sprite_picking/mesh_picking— only the UI needs hit-testing
+#   bevy_post_process          — no bloom, no tonemapping stack
+bevy = { version = "0.19", default-features = false, features = [
+  # App scaffolding
+  "std",
+  "async_executor",
+  "multi_threaded",
+  "bevy_asset",
+  "bevy_log",
+  "bevy_state",
+  "reflect_auto_register",
+  # Windowing and input
+  "bevy_winit",
+  "custom_cursor",
+  "default_font",
+  "x11",
+  "wayland",
+  "webgl2",
+  # 2D rendering
+  "2d_api",
+  "bevy_render",
+  "bevy_core_pipeline",
+  "bevy_sprite_render",
+  "png",
+  # UI. `ui_picking` is what makes `Interaction` fire on the menu buttons.
+  "ui_api",
+  "bevy_ui_render",
+  "bevy_picking",
+  "ui_picking",
+  # Audio
+  "bevy_audio",
+  "vorbis",
+] }
 bevy_rapier2d = "0.35"
 
 [features]
 # `cargo run --features dev` — hot-ish iteration: Bevy links dynamically so
 # only this crate is relinked on each edit. Never enable it for shipping builds.
-dev = ["bevy/dynamic_linking", "bevy/bevy_dev_tools"]
+# `bevy_gizmos_render` is what draws Rapier's collider wireframes; it is not
+# in the base feature set because nothing in a shipping build uses gizmos.
+dev = ["bevy/dynamic_linking", "bevy/bevy_dev_tools", "bevy/bevy_gizmos_render"]
 
 # Our own code is worth optimising a little in dev; dependencies (Bevy, wgpu)
 # are optimised fully, since we recompile them approximately never.
@@ -39,3 +83,5 @@ strip = true
 [profile.wasm-release]
 inherits = "release"
 opt-level = "s"
+lto = "fat"
+panic = "abort"
