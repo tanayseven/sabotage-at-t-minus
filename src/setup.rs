@@ -17,7 +17,7 @@ pub fn setup(mut commands: Commands, assets: Res<AssetServer>) {
 
     spawn_walls(&mut commands, &tiles);
     spawn_platforms(&mut commands, &tiles);
-    spawn_player(&mut commands);
+    spawn_player(&mut commands, &assets);
     spawn_props(&mut commands);
     spawn_hud(&mut commands);
 }
