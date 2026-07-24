@@ -9,7 +9,7 @@ macOS and publishes to [itch.io](https://itch.io).
 
 ```sh
 mise trust     # once, to allow this repo's mise.toml
-mise install   # rust, wasm-bindgen-cli, butler
+mise install   # rust, wasm-bindgen-cli, binaryen, butler
 mise run       # list every task
 mise run run   # play the game
 ```
@@ -33,18 +33,18 @@ with it — the binary depends on `libbevy_dylib.so` sitting next to it.
 
 ## Tasks
 
-| Task                        | What it does                                          |
-| --------------------------- | ----------------------------------------------------- |
-| `mise run run`              | Run natively                                          |
-| `mise run fmt` / `fmt:check`| Format / verify formatting                            |
-| `mise run lint`             | Clippy, warnings as errors                            |
-| `mise run test`             | Test suite                                            |
-| `mise run ci`               | Everything CI runs, locally                           |
-| `mise run build:native`     | Release build for this machine                        |
-| `mise run build:web`        | wasm + JS glue + assets into `dist/web`               |
-| `mise run serve:web`        | Build for web and serve on <http://localhost:8080>    |
-| `mise run publish:web`      | Build for web and `butler push` it to itch.io         |
-| `mise run clean`            | Drop `target/` and `dist/`                            |
+| Task                         | What it does                                               |
+|------------------------------|------------------------------------------------------------|
+| `mise run run`               | Run natively                                               |
+| `mise run fmt` / `fmt:check` | Format / verify formatting                                 |
+| `mise run lint`              | Clippy, warnings as errors                                 |
+| `mise run test`              | Test suite                                                 |
+| `mise run ci`                | Everything CI runs, locally                                |
+| `mise run build:native`      | Release build for this machine                             |
+| `mise run build:web`         | wasm + JS glue + assets + preload manifest into `dist/web` |
+| `mise run serve:web`         | Build for web and serve on <http://localhost:8080>         |
+| `mise run publish:web`       | Build for web and `butler push` it to itch.io              |
+| `mise run clean`             | Drop `target/` and `dist/`                                 |
 
 ## Shipping
 

@@ -9,8 +9,35 @@ pub const GRAVITY: f32 = 1800.0;
 
 pub const PLAYER_SPEED: f32 = 400.0;
 pub const JUMP_SPEED: f32 = 900.0;
-pub const PLAYER_SIZE: f32 = 64.0;
 pub const GROUND_PROBE: f32 = 4.0;
+
+/// How tall the character stands on screen. The collider is the same height,
+/// so what you see is what you collide with.
+pub const PLAYER_HEIGHT: f32 = 64.0;
+
+// Every character frame is a 128×128 image with the figure drawn roughly
+// 81×97 px inside it, centred horizontally and standing on the frame's bottom
+// edge. The whole frame has to be drawn to keep the figure's proportions, so
+// the numbers below scale and shift it until the *figure* — not the frame —
+// lines up with the collider.
+const ART_FRAME: f32 = 128.0;
+const ART_FIGURE_WIDTH: f32 = 81.0;
+const ART_FIGURE_HEIGHT: f32 = 97.0;
+
+/// Width of the collider, matching the figure's aspect ratio.
+pub const PLAYER_WIDTH: f32 = PLAYER_HEIGHT * ART_FIGURE_WIDTH / ART_FIGURE_HEIGHT;
+
+/// On-screen size of a whole character frame, transparent margins included.
+pub const PLAYER_FRAME_SIZE: f32 = ART_FRAME * PLAYER_HEIGHT / ART_FIGURE_HEIGHT;
+
+/// Where the entity's origin sits inside that frame, as an [`Anchor`] — a
+/// normalised offset from the frame's centre, `-0.5` being its bottom edge.
+/// The figure's feet are on that bottom edge, and the collider's own bottom is
+/// half its height below the origin, so lifting the anchor by exactly that much
+/// stands the figure on the floor of its collider instead of sinking it.
+///
+/// [`Anchor`]: bevy::sprite::Anchor
+pub const PLAYER_ART_ANCHOR: f32 = -0.5 + (PLAYER_HEIGHT / 2.0) / PLAYER_FRAME_SIZE;
 
 /// How long a run lasts before the launch clock hits zero.
 pub const MISSION_SECONDS: f32 = 120.0;

@@ -8,6 +8,9 @@ use crate::setup::GameEntity;
 
 pub const ACCENT: Color = Color::srgb(0.9, 0.35, 0.2);
 pub const MUTED_TEXT: Color = Color::srgb(0.75, 0.77, 0.82);
+/// Shared by every full-screen menu page, so they cut between each other
+/// without a flash of a different colour.
+pub const BACKDROP: Color = Color::srgb(0.08, 0.09, 0.12);
 
 const NORMAL_BUTTON: Color = Color::srgb(0.20, 0.22, 0.28);
 const HOVERED_BUTTON: Color = Color::srgb(0.28, 0.32, 0.40);
@@ -16,6 +19,24 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.45, 0.60);
 const HUD_QUIT_SIZE: Vec2 = Vec2::new(120.0, 44.0);
 const HUD_QUIT_FONT: f32 = 22.0;
 const HUD_COUNTDOWN_FONT: f32 = 30.0;
+
+const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
+const BACK_BUTTON_FONT: f32 = 24.0;
+
+/// Returns to the main menu. Shared by the options and credits screens.
+#[derive(Component)]
+pub struct BackButton;
+
+pub fn spawn_back_button(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn(Node {
+            margin: UiRect::top(px(20)),
+            ..default()
+        })
+        .with_children(|row| {
+            spawn_button(row, "Back", BackButton, BACK_BUTTON_SIZE, BACK_BUTTON_FONT);
+        });
+}
 
 /// Every button in the game looks the same; only the footprint and the label
 /// size change between the menu and the tighter in-game controls.

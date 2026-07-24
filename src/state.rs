@@ -5,6 +5,8 @@ pub enum GameState {
     #[default]
     Splash,
     Menu,
+    Options,
+    Credits,
     Playing,
 }
 
