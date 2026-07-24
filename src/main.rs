@@ -1,13 +1,18 @@
 mod camera;
 mod config;
 mod countdown;
+mod credits;
 mod gameover;
 mod menu;
+mod music;
+mod options;
 mod physics;
 mod platform;
 mod player;
+mod player_animation;
 mod props;
 mod quit;
+mod settings;
 mod setup;
 mod splash;
 mod state;
@@ -22,11 +27,18 @@ use bevy_rapier2d::prelude::*;
 use crate::camera::setup_camera;
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
+use crate::credits::{despawn_credits, spawn_credits};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
+use crate::music::{apply_music_volume, start_music, stop_music};
+use crate::options::{
+    back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
+};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
-use crate::player::{jump, move_player};
+use crate::player::{jump, move_player, probe_ground};
+use crate::player_animation::animate_player;
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
+use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
 use crate::splash::{animate_splash, despawn_splash, skip_splash, spawn_splash};
 use crate::state::{GameState, PlayingState};
@@ -57,6 +69,7 @@ fn main() {
     app.init_state::<GameState>()
         .add_sub_state::<PlayingState>()
         .init_resource::<MissionTimer>()
+        .init_resource::<Settings>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
         .add_systems(
@@ -67,13 +80,38 @@ fn main() {
         .add_systems(OnEnter(GameState::Menu), spawn_menu)
         .add_systems(Update, menu_action.run_if(in_state(GameState::Menu)))
         .add_systems(OnExit(GameState::Menu), despawn_menu)
-        .add_systems(OnEnter(GameState::Playing), (setup, reset_mission_timer))
+        .add_systems(OnEnter(GameState::Options), spawn_options)
         .add_systems(
             Update,
-            (move_player, jump, open_quit_dialog, tick_countdown)
+            (volume_step_action, sync_volume_widgets, back_to_menu)
+                .chain()
+                .run_if(in_state(GameState::Options)),
+        )
+        .add_systems(OnExit(GameState::Options), despawn_options)
+        .add_systems(OnEnter(GameState::Credits), spawn_credits)
+        .add_systems(Update, back_to_menu.run_if(in_state(GameState::Credits)))
+        .add_systems(OnExit(GameState::Credits), despawn_credits)
+        .add_systems(
+            OnEnter(GameState::Playing),
+            (setup, start_music, reset_mission_timer),
+        )
+        .add_systems(
+            Update,
+            // Chained because each step reads what the one before it wrote:
+            // the ray probe needs this frame's movement, jumping needs the
+            // probe, and the animation needs all three to pick a pose.
+            (
+                move_player,
+                probe_ground,
+                jump,
+                animate_player,
+                open_quit_dialog,
+                tick_countdown,
+            )
+                .chain()
                 .run_if(in_state(PlayingState::Running)),
         )
-        .add_systems(OnExit(GameState::Playing), despawn_game)
+        .add_systems(OnExit(GameState::Playing), (despawn_game, stop_music))
         .add_systems(
             OnEnter(PlayingState::ConfirmQuit),
             (spawn_quit_dialog, pause_physics),
@@ -98,6 +136,6 @@ fn main() {
             OnExit(PlayingState::GameOver),
             (despawn_game_over, resume_physics),
         )
-        .add_systems(Update, (button_visuals, sync_ui_scale))
+        .add_systems(Update, (button_visuals, sync_ui_scale, apply_music_volume))
         .run();
 }

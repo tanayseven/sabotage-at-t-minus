@@ -26,6 +26,8 @@
         inset: 0;
         display: grid;
         place-content: center;
+        justify-items: center;
+        gap: 18px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         font-size: 0.85rem;
@@ -33,23 +35,106 @@
       #loading[hidden] {
         display: none;
       }
+      #loading-track {
+        width: min(60vw, 320px);
+        height: 6px;
+        border-radius: 999px;
+        background: #1c2130;
+        overflow: hidden;
+      }
+      #loading-bar {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: #d7dbe4;
+        transition: width 0.15s ease-out;
+      }
+      #loading-label {
+        font-variant-numeric: tabular-nums;
+        opacity: 0.7;
+      }
     </style>
   </head>
   <body>
-    <div id="loading">Loading…</div>
+    <div id="loading">
+      <div id="loading-text">Loading…</div>
+      <div id="loading-track"><div id="loading-bar"></div></div>
+      <div id="loading-label">0%</div>
+    </div>
     <canvas id="game-canvas"></canvas>
     <script type="module">
       import init from "./game.js";
 
       const loading = document.getElementById("loading");
+      const text = document.getElementById("loading-text");
+      const bar = document.getElementById("loading-bar");
+      const label = document.getElementById("loading-label");
+
+      const setProgress = (fraction) => {
+        const pct = Math.max(0, Math.min(1, fraction)) * 100;
+        bar.style.width = pct.toFixed(1) + "%";
+        label.textContent = Math.round(pct) + "%";
+      };
+
+      // Open a request and read its declared size before we start streaming the
+      // body, so the denominator is known up front and the bar only moves
+      // forward. A missing Content-Length (e.g. a compressed response) counts
+      // as zero here; the final setProgress(1) still lands the bar at 100%.
+      const open = async (url) => {
+        const res = await fetch(url, { cache: "force-cache" });
+        if (!res.ok) throw new Error(url + ": " + res.status);
+        return { res, size: Number(res.headers.get("content-length")) || 0 };
+      };
+
+      // Download the wasm and every asset, driving one combined progress bar.
+      // Assets land in the browser cache so Bevy's own fetches for them are
+      // instant once the engine boots. Returns the wasm bytes for init().
+      const preload = async (onProgress) => {
+        let assets = [];
+        try {
+          const res = await fetch("assets-manifest.json", { cache: "force-cache" });
+          if (res.ok) assets = await res.json();
+        } catch {
+          // No manifest (older build): fall back to loading just the wasm.
+        }
+
+        const urls = ["game_bg.wasm", ...assets.map((path) => "assets/" + path)];
+        const opened = await Promise.all(urls.map(open));
+        const total = opened.reduce((sum, o) => sum + o.size, 0) || 1;
+
+        let loaded = 0;
+        const bytes = await Promise.all(
+          opened.map(async ({ res }, index) => {
+            const reader = res.body.getReader();
+            const chunks = [];
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              loaded += value.length;
+              // Cap below 1 while streaming: compressed responses report a
+              // smaller Content-Length than the bytes we actually read.
+              onProgress(Math.min(loaded / total, 0.999));
+            }
+            // Only the wasm (first url) needs to survive; assets were fetched
+            // purely to warm the cache.
+            return index === 0 ? await new Blob(chunks).arrayBuffer() : null;
+          }),
+        );
+
+        onProgress(1);
+        return bytes[0];
+      };
+
       try {
-        await init();
+        const wasm = await preload(setProgress);
+        await init({ module_or_path: wasm });
         loading.hidden = true;
       } catch (error) {
         // Bevy's winit backend throws a control-flow exception on startup by
         // design; anything else is a genuine failure worth surfacing.
         if (!`${error}`.includes("Using exceptions for control flow")) {
-          loading.textContent = "Failed to load. See the browser console.";
+          text.textContent = "Failed to load. See the browser console.";
           throw error;
         }
         loading.hidden = true;

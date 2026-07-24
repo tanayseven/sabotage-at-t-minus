@@ -1,29 +1,46 @@
 use bevy::prelude::*;
+use bevy::sprite::Anchor;
 use bevy_rapier2d::prelude::*;
 
-use crate::config::{GROUND_PROBE, JUMP_SPEED, PLAYER_SIZE, PLAYER_SPEED};
+use crate::config::{
+    GROUND_PROBE, JUMP_SPEED, PLAYER_ART_ANCHOR, PLAYER_FRAME_SIZE, PLAYER_HEIGHT, PLAYER_SPEED,
+    PLAYER_WIDTH,
+};
+use crate::player_animation::PlayerAnimation;
 use crate::setup::GameEntity;
 
 const SPAWN_POSITION: Vec2 = Vec2::new(-380.0, 260.0);
-const GROUND_PROBE_LENGTH: f32 = PLAYER_SIZE / 2.0 + GROUND_PROBE;
+const GROUND_PROBE_LENGTH: f32 = PLAYER_HEIGHT / 2.0 + GROUND_PROBE;
 
 #[derive(Component)]
 pub struct Player;
 
-pub fn spawn_player(commands: &mut Commands) {
+/// Whether the player is standing on something, refreshed once a frame so that
+/// jumping and the animation agree on it without each casting its own ray.
+#[derive(Component, Default)]
+pub struct Grounded(pub bool);
+
+pub fn spawn_player(commands: &mut Commands, assets: &AssetServer) {
+    let animation = PlayerAnimation::load(assets);
+
     commands.spawn((
         GameEntity,
         Player,
         Sprite {
-            color: Color::srgb(0.9, 0.35, 0.2),
-            custom_size: Some(Vec2::splat(PLAYER_SIZE)),
+            image: animation.frame(),
+            custom_size: Some(Vec2::splat(PLAYER_FRAME_SIZE)),
             ..default()
         },
+        // Lifts the art off the entity's origin so the figure stands on the
+        // bottom of its collider rather than straddling the middle of it.
+        Anchor(Vec2::new(0.0, PLAYER_ART_ANCHOR)),
+        animation,
         Transform::from_xyz(SPAWN_POSITION.x, SPAWN_POSITION.y, 0.0),
         RigidBody::Dynamic,
-        Collider::cuboid(PLAYER_SIZE / 2.0, PLAYER_SIZE / 2.0),
+        Collider::cuboid(PLAYER_WIDTH / 2.0, PLAYER_HEIGHT / 2.0),
         LockedAxes::ROTATION_LOCKED,
         Velocity::zero(),
+        Grounded::default(),
         Friction::coefficient(0.0),
         Ccd::enabled(),
     ));
@@ -46,21 +63,17 @@ pub fn move_player(
     }
 }
 
-pub fn jump(
-    keys: Res<ButtonInput<KeyCode>>,
+/// Casts a short ray straight down from the player and records what it finds.
+pub fn probe_ground(
     rapier: ReadRapierContext,
-    mut players: Query<(Entity, &Transform, &mut Velocity), With<Player>>,
+    mut players: Query<(Entity, &Transform, &mut Grounded), With<Player>>,
 ) {
-    if !keys.any_just_pressed([KeyCode::Space, KeyCode::KeyW]) {
-        return;
-    }
-
     let Ok(context) = rapier.single() else {
         return;
     };
 
-    for (entity, transform, mut velocity) in &mut players {
-        let standing_on_something = context
+    for (entity, transform, mut grounded) in &mut players {
+        grounded.0 = context
             .cast_ray(
                 transform.translation.truncate(),
                 Vec2::NEG_Y,
@@ -69,8 +82,19 @@ pub fn jump(
                 QueryFilter::default().exclude_collider(entity),
             )
             .is_some();
+    }
+}
 
-        if standing_on_something {
+pub fn jump(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut players: Query<(&Grounded, &mut Velocity), With<Player>>,
+) {
+    if !keys.any_just_pressed([KeyCode::Space, KeyCode::KeyW]) {
+        return;
+    }
+
+    for (grounded, mut velocity) in &mut players {
+        if grounded.0 {
             velocity.linear.y = JUMP_SPEED;
         }
     }
