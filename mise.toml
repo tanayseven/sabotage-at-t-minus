@@ -16,6 +16,9 @@ rust = { version = "1.97.1", profile = "default", components = "rustfmt,clippy,r
 # `github`, but as of mise 2026.5.3 that one extracts butler without the
 # executable bit, so it fails with EACCES. Revisit when mise fixes it.
 "ubi:itchio/butler" = "15.29.0"
+# Binaryen's release tarball carries several binaries; without `bin_path` the
+# ubi backend picks the wrong one (it lands on the gtest runner, not wasm-opt).
+"ubi:WebAssembly/binaryen" = { version = "version_131", extract_all = true, bin_path = "bin" }
 
 [env]
 # Where `mise run build:*` drops shippable artifacts.
@@ -69,8 +72,30 @@ wasm-bindgen \
   --target web \
   --no-typescript \
   target/wasm32-unknown-unknown/wasm-release/sabotage-at-t-minus.wasm
+# Shrink the module before it ships. `-Oz` buys ~15% over what rustc emits.
+# The feature flags have to be spelled out: wasm-bindgen drops the
+# `target_features` section, so wasm-opt would otherwise assume MVP and reject
+# the bulk-memory ops rustc emits by default. Every flag here is in the
+# baseline set browsers have shipped since 2023.
+wasm-opt -Oz \
+  --enable-bulk-memory \
+  --enable-bulk-memory-opt \
+  --enable-sign-ext \
+  --enable-mutable-globals \
+  --enable-nontrapping-float-to-int \
+  --enable-multivalue \
+  --enable-reference-types \
+  --enable-extended-const \
+  --enable-call-indirect-overlong \
+  "$out/game_bg.wasm" -o "$out/game_bg.wasm"
 cp web/index.html "$out/index.html"
 cp -r assets "$out/assets"
+# Manifest the preloader reads to fetch every asset up front (paths relative
+# to assets/, .gitkeep excluded). Generated here so it can never drift from
+# what actually ships in dist/web/assets.
+( cd "$out/assets" && find . -type f ! -name '.gitkeep' ) \
+  | python3 -c 'import json,sys; print(json.dumps(sorted(l.strip()[2:] for l in sys.stdin if l.strip())))' \
+  > "$out/assets-manifest.json"
 echo "built -> $out"
 """
 
