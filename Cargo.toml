@@ -18,6 +18,14 @@ dev = ["bevy/dynamic_linking", "bevy/bevy_dev_tools"]
 # are optimised fully, since we recompile them approximately never.
 [profile.dev]
 opt-level = 1
+# The default `rust-lld` linker, fed incremental object files that reference a
+# dependency's shared-generic monomorphisations, can drop those as "undefined
+# hidden symbol" at link time (notably bevy_rapier2d's `register_required_
+# components`). It surfaces only after incremental churn, never on a clean
+# build. Turning incremental off makes every local build a clean one; the cost
+# is negligible since this crate is tiny and dependencies are never built
+# incrementally anyway.
+incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3

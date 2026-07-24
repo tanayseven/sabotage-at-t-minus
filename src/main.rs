@@ -1,25 +1,14 @@
-//! Sabotage at T-Minus — entry point.
-//!
-//! Right now this is a scaffold: a window, a camera, and a square you can
-//! drive around, so that every part of the build/ship pipeline has something
-//! real to carry. Replace the placeholder scene with the actual game.
-//!
-//! The window is resizable and everything in it scales with it. Game code
-//! should be written against [`config::DESIGN_WIDTH`] × [`config::DESIGN_HEIGHT`]
-//! world units and never against the window's pixel size — see
-//! [`ui::sync_ui_scale`] for how the UI layer is kept in step with the camera.
-//!
-//! Movement and collision go through Rapier. The view is from the side: bodies
-//! fall under gravity and land on the platforms spawned by
-//! [`platform::spawn_platforms`].
-
 mod camera;
 mod config;
+mod menu;
 mod physics;
 mod platform;
 mod player;
 mod props;
+mod quit;
 mod setup;
+mod splash;
+mod state;
 mod ui;
 mod wall;
 
@@ -27,11 +16,16 @@ use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use bevy_rapier2d::prelude::*;
 
+use crate::camera::setup_camera;
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
-use crate::physics::configure_physics;
+use crate::menu::{despawn_menu, menu_action, spawn_menu};
+use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player};
-use crate::setup::setup;
-use crate::ui::sync_ui_scale;
+use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
+use crate::setup::{despawn_game, setup};
+use crate::splash::{animate_splash, despawn_splash, skip_splash, spawn_splash};
+use crate::state::{GameState, PlayingState};
+use crate::ui::{button_visuals, sync_ui_scale};
 
 fn main() {
     let mut app = App::new();
@@ -44,7 +38,6 @@ fn main() {
                 resizable: true,
                 canvas: Some("#game-canvas".into()),
                 fit_canvas_to_parent: true,
-                // Let the browser keep handling F5, ctrl+L and friends.
                 prevent_default_event_handling: false,
                 ..default()
             }),
@@ -53,11 +46,39 @@ fn main() {
         RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
     ));
 
-    // Collider outlines are a debugging aid, not something players should see.
     #[cfg(feature = "dev")]
     app.add_plugins(RapierDebugRenderPlugin::default());
 
-    app.add_systems(Startup, (configure_physics, setup))
-        .add_systems(Update, (move_player, jump, sync_ui_scale))
+    app.init_state::<GameState>()
+        .add_sub_state::<PlayingState>()
+        .add_systems(Startup, (configure_physics, setup_camera))
+        .add_systems(OnEnter(GameState::Splash), spawn_splash)
+        .add_systems(
+            Update,
+            (animate_splash, skip_splash).run_if(in_state(GameState::Splash)),
+        )
+        .add_systems(OnExit(GameState::Splash), despawn_splash)
+        .add_systems(OnEnter(GameState::Menu), spawn_menu)
+        .add_systems(Update, menu_action.run_if(in_state(GameState::Menu)))
+        .add_systems(OnExit(GameState::Menu), despawn_menu)
+        .add_systems(OnEnter(GameState::Playing), setup)
+        .add_systems(
+            Update,
+            (move_player, jump, open_quit_dialog).run_if(in_state(PlayingState::Running)),
+        )
+        .add_systems(OnExit(GameState::Playing), despawn_game)
+        .add_systems(
+            OnEnter(PlayingState::ConfirmQuit),
+            (spawn_quit_dialog, pause_physics),
+        )
+        .add_systems(
+            Update,
+            quit_dialog_action.run_if(in_state(PlayingState::ConfirmQuit)),
+        )
+        .add_systems(
+            OnExit(PlayingState::ConfirmQuit),
+            (despawn_quit_dialog, resume_physics),
+        )
+        .add_systems(Update, (button_visuals, sync_ui_scale))
         .run();
 }
