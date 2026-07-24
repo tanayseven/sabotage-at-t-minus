@@ -9,6 +9,7 @@ mod quit;
 mod setup;
 mod splash;
 mod state;
+mod tiles;
 mod ui;
 mod wall;
 

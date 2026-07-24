@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH};
+use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
@@ -98,7 +98,7 @@ pub fn sync_ui_scale(
         return;
     };
 
-    let scale = (window.width() / DESIGN_WIDTH).min(window.height() / DESIGN_HEIGHT);
+    let scale = (window.width() / VIEW_WIDTH).min(window.height() / VIEW_HEIGHT);
     if !scale.is_finite() || scale <= 0.0 {
         return;
     }
