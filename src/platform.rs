@@ -7,15 +7,17 @@ use crate::tiles::{Axis, TileRun, TileSet};
 
 const PLATFORM_Z: f32 = -1.0;
 
-struct Platform {
-    centre: Vec2,
-    width: f32,
+/// A solid ledge you can stand on. The launch pad's stairway and gantry bridge
+/// are made of these too, which is why it is public.
+pub struct Platform {
+    pub centre: Vec2,
+    pub width: f32,
 }
 
 impl Platform {
-    fn spawn(&self, commands: &mut Commands, tiles: &TileSet) {
+    pub fn spawn(&self, commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
         commands.spawn((
-            GameEntity,
+            marker.clone(),
             Transform::from_xyz(self.centre.x, self.centre.y, PLATFORM_Z),
             RigidBody::Fixed,
             Collider::cuboid(self.width / 2.0, PLATFORM_HEIGHT / 2.0),
@@ -28,7 +30,7 @@ impl Platform {
             thickness: PLATFORM_HEIGHT,
             z: PLATFORM_Z,
         }
-        .spawn(commands, tiles);
+        .spawn(commands, tiles, marker);
     }
 }
 
@@ -49,6 +51,6 @@ pub fn spawn_platforms(commands: &mut Commands, tiles: &TileSet) {
     ];
 
     for platform in platforms {
-        platform.spawn(commands, tiles);
+        platform.spawn(commands, tiles, GameEntity);
     }
 }

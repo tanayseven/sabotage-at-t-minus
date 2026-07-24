@@ -7,6 +7,9 @@ pub enum GameState {
     Menu,
     Options,
     Credits,
+    /// The pad the player boards the rocket from. Picking "Play" lands here,
+    /// and walking into the rocket's hatch is what starts the run.
+    Launchpad,
     Playing,
 }
 
