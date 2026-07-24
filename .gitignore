@@ -1,5 +1,8 @@
 /target
 /dist
+# Lossless masters the build never ships: `build:web` copies all of assets/,
+# so anything in here is deliberately kept out of that tree. Encode to assets/.
+/assets-src
 mise.local.toml
 .mise.local.toml
 *.log
