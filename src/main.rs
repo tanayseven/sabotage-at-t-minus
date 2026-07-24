@@ -7,6 +7,7 @@ mod options;
 mod physics;
 mod platform;
 mod player;
+mod player_animation;
 mod props;
 mod quit;
 mod settings;
@@ -30,7 +31,8 @@ use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
 };
 use crate::physics::{configure_physics, pause_physics, resume_physics};
-use crate::player::{jump, move_player};
+use crate::player::{jump, move_player, probe_ground};
+use crate::player_animation::animate_player;
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
@@ -87,7 +89,18 @@ fn main() {
         .add_systems(OnEnter(GameState::Playing), (setup, start_music))
         .add_systems(
             Update,
-            (move_player, jump, open_quit_dialog).run_if(in_state(PlayingState::Running)),
+            // Chained because each step reads what the one before it wrote:
+            // the ray probe needs this frame's movement, jumping needs the
+            // probe, and the animation needs all three to pick a pose.
+            (
+                move_player,
+                probe_ground,
+                jump,
+                animate_player,
+                open_quit_dialog,
+            )
+                .chain()
+                .run_if(in_state(PlayingState::Running)),
         )
         .add_systems(OnExit(GameState::Playing), (despawn_game, stop_music))
         .add_systems(
