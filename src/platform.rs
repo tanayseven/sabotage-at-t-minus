@@ -8,6 +8,7 @@ const PLATFORM_Z: f32 = -1.0;
 
 /// A solid ledge you can stand on. The launch pad's stairway and gantry bridge
 /// are made of these too, which is why it is public.
+#[derive(Debug)]
 pub struct Platform {
     pub centre: Vec2,
     pub width: f32,
@@ -21,8 +22,13 @@ impl Platform {
         }
     }
 
-    /// The surface the player stands on, which is what level layouts are
-    /// measured against rather than the centre the collider is built from.
+    /// Built from the surface the player lands on, which is what a level layout
+    /// is actually reasoned about, rather than the centre the collider needs.
+    pub const fn with_top(x: f32, top: f32, width: f32) -> Self {
+        Self::new(x, top - PLATFORM_HEIGHT / 2.0, width)
+    }
+
+    /// The surface the player stands on.
     pub const fn top(&self) -> f32 {
         self.centre.y + PLATFORM_HEIGHT / 2.0
     }

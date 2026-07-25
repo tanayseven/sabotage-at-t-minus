@@ -66,7 +66,7 @@ const BAY_CRATES: [Vec2; 4] = [
     Vec2::new(120.0, 300.0),
     Vec2::new(200.0, 300.0),
     // Kept clear of the exit pad, so nothing settles on top of the way out.
-    Vec2::new(340.0, 200.0),
+    Vec2::new(380.0, 200.0),
 ];
 
 /// The bay's exit pad, standing on the right-hand platform.
@@ -75,35 +75,82 @@ const BAY_EXIT: Vec2 = Vec2::new(470.0, BAY_PLATFORMS[2].top() + EXIT_SIZE.y / 2
 /// How far the ascent reaches either side of the origin — the line the camera
 /// stops panning at, not a wall. Nothing stops the player walking past it.
 const ASCENT_REACH: f32 = 2100.0;
-/// Headroom above the ground the camera is allowed to climb into.
+/// Headroom above the ground for the camera to climb into, with room to spare
+/// over the highest ledge so the top of the climb is not framed against nothing.
 const ASCENT_CEILING: f32 = GROUND_TOP + 1400.0;
 
-const ASCENT_PLATFORMS: [Platform; 9] = [
+/// The ascent has to be laid out for a camera that only ever shows a slice of
+/// it: at [`FOLLOW_ZOOM`] roughly 710x400 units are on screen at once, a third
+/// of what the bay gets. Two rules fall out of that, and both were learned the
+/// hard way from a layout drawn for the unzoomed view.
+///
+/// The first is that the ledges have to be close together — near enough that
+/// two or three are always in frame, or the player runs through blank screen.
+///
+/// The second is that height has to be spent carefully. Standing on the ground
+/// the camera is clamped to the bottom of the level, so anything more than
+/// ~370 units up is off the top of the screen. The long run therefore stays in
+/// a shallow band where every ledge is visible from the floor, and the climb
+/// that does go up is saved for the end, where going up *is* the point.
+/// The third rule, and the one that decides these numbers: a jump at a full run
+/// covers about 400 units, so a ledge much narrower than that is one a player
+/// holding "right" sails straight over. The ledges are wide and the gaps between
+/// them small — the run is meant to be a rhythm, not a series of pixel landings.
+const ASCENT_BAND_STEP: f32 = 360.0;
+const ASCENT_BAND_WIDTH: f32 = 330.0;
+const ASCENT_BAND_START: f32 = -1800.0;
+
+/// One ledge of the long run, `index` steps along, `height` units above the
+/// ground. Heights roll up and down rather than climbing, so the camera drifts
+/// vertically as the player hops along instead of holding one line.
+const fn band(index: f32, height: f32) -> Platform {
+    Platform::with_top(
+        ASCENT_BAND_START + index * ASCENT_BAND_STEP,
+        GROUND_TOP + height,
+        ASCENT_BAND_WIDTH,
+    )
+}
+
+/// Where the climb at the end of the run starts, past the last band ledge.
+const ASCENT_CLIMB_START: f32 = 1000.0;
+const ASCENT_CLIMB_STEP: Vec2 = Vec2::new(240.0, 130.0);
+const ASCENT_CLIMB_WIDTH: f32 = 220.0;
+
+/// One rung of that climb. Tighter and steeper than the band: 20 units of gap
+/// and 130 of rise, against a jump arc of 225 up by ~400 across.
+const fn rung(index: f32) -> Platform {
+    Platform::with_top(
+        ASCENT_CLIMB_START + index * ASCENT_CLIMB_STEP.x,
+        GROUND_TOP + 480.0 + index * ASCENT_CLIMB_STEP.y,
+        ASCENT_CLIMB_WIDTH,
+    )
+}
+
+const ASCENT_PLATFORMS: [Platform; 14] = [
     // With no side walls, the ground is the only thing between the player and
     // open air, so it runs well past the far edge of the camera's reach.
-    Platform::new(
-        0.0,
-        GROUND_TOP - PLATFORM_HEIGHT / 2.0,
-        ASCENT_REACH * 2.0 + 400.0,
-    ),
-    // A staircase of ledges rising to the right. Every gap and rise below sits
-    // inside the jump arc: 225px up, ~400px across.
-    Platform::new(-1500.0, -180.0, 320.0),
-    Platform::new(-1100.0, -30.0, 280.0),
-    Platform::new(-700.0, 110.0, 260.0),
-    Platform::new(-280.0, 20.0, 300.0),
-    Platform::new(160.0, 170.0, 280.0),
-    Platform::new(620.0, 70.0, 320.0),
-    Platform::new(1060.0, 230.0, 260.0),
-    Platform::new(1500.0, 390.0, 300.0),
+    Platform::with_top(0.0, GROUND_TOP, ASCENT_REACH * 2.0 + 400.0),
+    band(0.0, 130.0),
+    band(1.0, 250.0),
+    band(2.0, 180.0),
+    band(3.0, 300.0),
+    band(4.0, 210.0),
+    band(5.0, 330.0),
+    band(6.0, 260.0),
+    band(7.0, 360.0),
+    rung(0.0),
+    rung(1.0),
+    rung(2.0),
+    rung(3.0),
+    rung(4.0),
 ];
 
 const ASCENT_CRATES: [Vec2; 5] = [
-    Vec2::new(-1500.0, 80.0),
-    Vec2::new(-700.0, 400.0),
-    Vec2::new(180.0, 460.0),
-    Vec2::new(240.0, 460.0),
-    Vec2::new(1060.0, 520.0),
+    Vec2::new(band(1.0, 250.0).centre.x, band(1.0, 250.0).top() + 120.0),
+    Vec2::new(band(3.0, 300.0).centre.x, band(3.0, 300.0).top() + 120.0),
+    Vec2::new(band(5.0, 330.0).centre.x, band(5.0, 330.0).top() + 120.0),
+    Vec2::new(band(7.0, 360.0).centre.x, band(7.0, 360.0).top() + 120.0),
+    Vec2::new(rung(2.0).centre.x, rung(2.0).top() + 120.0),
 ];
 
 impl Level {
@@ -138,7 +185,7 @@ impl Level {
     pub fn player_spawn(self) -> Vec2 {
         match self {
             Level::RocketBay => Vec2::new(-380.0, 260.0),
-            Level::Ascent => Vec2::new(-1850.0, GROUND_TOP + 160.0),
+            Level::Ascent => Vec2::new(ASCENT_BAND_START - 280.0, GROUND_TOP + 160.0),
         }
     }
 
@@ -230,7 +277,7 @@ pub fn reach_exit(
 
 #[cfg(test)]
 mod tests {
-    use super::{ASCENT_PLATFORMS, CameraMode, Level};
+    use super::{ASCENT_PLATFORMS, CameraMode, FOLLOW_ZOOM, GROUND_TOP, Level, PLAYER_HEIGHT};
 
     #[test]
     fn the_run_ends_after_the_ascent() {
@@ -266,6 +313,55 @@ mod tests {
         };
 
         assert!(bounds.contains(Level::Ascent.player_spawn()));
+    }
+
+    /// Every ledge of the ascent has to be reachable from the one before it, or
+    /// the run dead-ends part way along.
+    #[test]
+    fn the_ascent_can_be_climbed() {
+        use crate::config::{GRAVITY, JUMP_SPEED, PLAYER_SPEED};
+
+        let rise = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
+        let reach = PLAYER_SPEED * 2.0 * JUMP_SPEED / GRAVITY;
+
+        // Skipping the ground, which every ledge sits above rather than after.
+        for pair in ASCENT_PLATFORMS[1..].windows(2) {
+            let (from, to) = (&pair[0], &pair[1]);
+            let gap = (to.centre.x - to.width / 2.0) - (from.centre.x + from.width / 2.0);
+
+            assert!(
+                to.top() - from.top() <= rise,
+                "unreachable rise onto {to:?}"
+            );
+            assert!(gap <= reach, "unjumpable gap before {to:?}");
+        }
+    }
+
+    /// The lesson the first draft of this level taught: at [`FOLLOW_ZOOM`] the
+    /// camera sits on the floor of the level while the player is on the ground,
+    /// so a ledge much above it is simply not on screen. The long run has to
+    /// stay under that line or the player runs through an empty frame.
+    #[test]
+    fn the_long_run_is_visible_from_the_ground() {
+        use crate::config::VIEW_HEIGHT;
+
+        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
+            panic!("the ascent is meant to use a following camera");
+        };
+        // The narrowest the viewport ever gets vertically, and so the least
+        // that is ever on screen.
+        let half_view = VIEW_HEIGHT / FOLLOW_ZOOM / 2.0;
+        let camera_y = (GROUND_TOP + PLAYER_HEIGHT / 2.0)
+            .clamp(bounds.min.y + half_view, bounds.max.y - half_view);
+        let top_of_screen = camera_y + half_view;
+
+        let long_run = &ASCENT_PLATFORMS[1..=8];
+        for ledge in long_run {
+            assert!(
+                ledge.top() <= top_of_screen,
+                "{ledge:?} is off the top of the screen"
+            );
+        }
     }
 
     /// The ascent has no side walls, so its ground has to reach past both edges
