@@ -3,9 +3,10 @@
 # install if what's fetched doesn't match. Keeps this project reproducible
 # even if the global mise config ever turns lockfiles off.
 lockfile = true
-# Paranoid mode: extra-strict security — verify checksums/signatures and
-# refuse anything mise can't vouch for, rather than warning and continuing.
-paranoid = true
+# NOTE: `paranoid` deliberately isn't set here. mise only honours it in the
+# global config (~/.config/mise/config.toml) — a repo can't turn on the strict
+# security mode for whoever clones it — and setting it here just warns on every
+# invocation. Opt in per machine instead.
 
 [tools]
 rust = { version = "1.97.1", profile = "default", components = "rustfmt,clippy,rust-src", targets = "wasm32-unknown-unknown" }
