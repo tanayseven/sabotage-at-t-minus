@@ -17,10 +17,11 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
-use crate::level::{Level, LevelEntity};
+use crate::level::{Level, LevelEntity, LevelProgress};
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
 use crate::setup::build_level;
+use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
 /// than standing proud of it, and tall enough to walk through without ducking.
@@ -32,6 +33,7 @@ const OPEN_LIP: f32 = 10.0;
 
 const SHUT_COLOR: Color = Color::srgb(0.62, 0.42, 0.22);
 const OPEN_COLOR: Color = Color::srgb(0.38, 0.30, 0.22);
+const AIRLOCK_BLOCKED_COLOR: Color = Color::srgb(0.85, 0.28, 0.25);
 /// The way out is coloured apart from the bulkhead doors, so the room the run
 /// ends in says so before the player has walked the length of it.
 const AIRLOCK_COLOR: Color = Color::srgb(0.45, 0.9, 0.55);
@@ -82,6 +84,7 @@ pub struct Door {
     pub at: Vec2,
     pub kind: DoorKind,
     pub open: bool,
+    pub locked: bool,
 }
 
 impl Door {
@@ -92,6 +95,7 @@ impl Door {
             at: Vec2::new(x, deck + DOOR_SIZE.y / 2.0),
             kind,
             open: false,
+            locked: false,
         }
     }
 
@@ -100,7 +104,10 @@ impl Door {
     }
 
     pub const fn airlock(x: f32, deck: f32) -> Self {
-        Self::standing_on(x, deck, DoorKind::Airlock)
+        Self {
+            locked: true,
+            ..Self::standing_on(x, deck, DoorKind::Airlock)
+        }
     }
 
     /// The sill — the deck plate the door stands on.
@@ -121,20 +128,32 @@ impl Door {
         offset.x <= REACH.x && offset.y <= REACH.y
     }
 
-    fn color(&self) -> Color {
-        match (self.kind, self.open) {
-            (DoorKind::Airlock, _) => AIRLOCK_COLOR,
-            (DoorKind::Bulkhead, false) => SHUT_COLOR,
-            (DoorKind::Bulkhead, true) => OPEN_COLOR,
+    pub fn color(&self) -> Color {
+        match self.kind {
+            DoorKind::Airlock if self.locked => AIRLOCK_BLOCKED_COLOR,
+            DoorKind::Airlock => AIRLOCK_COLOR,
+            DoorKind::Bulkhead if self.open => OPEN_COLOR,
+            DoorKind::Bulkhead => SHUT_COLOR,
         }
     }
 }
 
-pub fn spawn_doors(commands: &mut Commands, doors: &[Door], marker: impl Bundle + Clone) {
+pub fn spawn_doors(
+    commands: &mut Commands,
+    doors: &[Door],
+    marker: impl Bundle + Clone,
+    progress: crate::level::LevelProgress,
+) {
     for door in doors {
+        let mut door = *door;
+
+        if door.kind == DoorKind::Airlock {
+            door.locked = !progress.all_portals_completed();
+        }
+
         commands.spawn((
             marker.clone(),
-            *door,
+            door,
             Sprite {
                 color: door.color(),
                 custom_size: Some(DOOR_SIZE),
@@ -168,7 +187,7 @@ pub fn use_doors(
 
     let nearest = doors
         .iter()
-        .filter(|(_, door, _, _)| !door.open && door.in_reach(at))
+        .filter(|(_, door, _, _)| !door.open && !door.locked && door.in_reach(at))
         .min_by(|(_, one, _, _), (_, other, _, _)| {
             one.at
                 .distance_squared(at)
@@ -207,6 +226,7 @@ pub fn leave_through_airlock(
     players: Query<&Transform, With<Player>>,
     doors: Query<&Door>,
     built: Query<Entity, With<LevelEntity>>,
+    mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Ok(player) = players.single() else {
         return;
@@ -215,18 +235,30 @@ pub fn leave_through_airlock(
 
     let stepped_out = doors
         .iter()
-        .any(|door| door.kind == DoorKind::Airlock && door.open && door.in_reach(at));
+        .any(|door| {
+            door.kind == DoorKind::Airlock && door.open && !door.locked && door.in_reach(at)
+        });
 
-    let Some(next) = stepped_out.then(|| level.next()).flatten() else {
+    let Some(next) = stepped_out.then(|| level.next()) else {
         return;
     };
 
-    *level = next;
+    if let Some(next_level) = next {
+        *level = next_level;
 
-    for entity in &built {
-        commands.entity(entity).despawn();
+        for entity in &built {
+            commands.entity(entity).despawn();
+        }
+        build_level(
+            &mut commands,
+            &assets,
+            &mut images,
+            next_level,
+            LevelProgress::new(next_level),
+        );
+    } else {
+        next_playing.set(PlayingState::MissionComplete);
     }
-    build_level(&mut commands, &assets, &mut images, next);
 }
 
 #[cfg(test)]
@@ -319,7 +351,12 @@ mod tests {
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.add_systems(Startup, configure_physics);
         app.add_systems(Startup, |mut commands: Commands| {
-            spawn_doors(&mut commands, &[BULKHEAD_DOOR], ());
+            spawn_doors(
+                &mut commands,
+                &[BULKHEAD_DOOR],
+                (),
+                LevelProgress::new(Level::Rocket),
+            );
         });
         app.add_systems(Update, (move_player, use_doors).chain());
 
@@ -400,7 +437,12 @@ mod tests {
         }
 
         app.add_systems(Startup, |mut commands: Commands| {
-            spawn_doors(&mut commands, Level::Rocket.doors(), ());
+            spawn_doors(
+                &mut commands,
+                Level::Rocket.doors(),
+                (),
+                LevelProgress::new(Level::Rocket),
+            );
         });
     }
 

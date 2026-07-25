@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::state::PlayingState;
 
+mod sequence_challenge;
 mod tap_challenge;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -13,6 +14,7 @@ const WINDOW_SIZE: f32 = 380.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     TapChallenge,
+    SequenceChallenge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,20 +22,20 @@ pub enum MinigameOutcome {
     Success,
     #[allow(dead_code)]
     Failure,
+    #[allow(dead_code)]
     TimedOut,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MinigameConfig {
     pub id: MinigameId,
-    pub time_limit_seconds: f32,
 }
 
 /// Common contract future minigames can implement.
 pub trait MinigameInstance: Send + Sync + 'static {
     fn title(&self) -> &'static str;
     fn instructions(&self) -> &'static str;
-    fn status(&self, remaining_seconds: f32) -> String;
+    fn status(&self) -> String;
     fn tick(&mut self, keys: &ButtonInput<KeyCode>) -> Option<MinigameOutcome>;
 }
 
@@ -44,7 +46,6 @@ pub struct PendingMinigame(pub MinigameConfig);
 pub struct ActiveMinigame {
     pub id: MinigameId,
     pub game: Box<dyn MinigameInstance>,
-    pub remaining_seconds: f32,
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -85,12 +86,11 @@ pub fn spawn_minigame_window(
     let game = new_minigame(id);
     let title = game.title();
     let instructions = game.instructions();
-    let status = game.status(config.time_limit_seconds);
+    let status = game.status();
 
     commands.insert_resource(ActiveMinigame {
         id,
         game,
-        remaining_seconds: config.time_limit_seconds,
     });
     commands.remove_resource::<PendingMinigame>();
 
@@ -157,7 +157,6 @@ pub fn spawn_minigame_window(
 }
 
 pub fn run_active_minigame(
-    time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     active: Option<ResMut<ActiveMinigame>>,
@@ -169,17 +168,6 @@ pub fn run_active_minigame(
         return;
     };
 
-    active.remaining_seconds -= time.delta_secs();
-
-    if active.remaining_seconds <= 0.0 {
-        commands.insert_resource(CompletedMinigame {
-            id: active.id,
-            outcome: MinigameOutcome::TimedOut,
-        });
-        next_playing.set(PlayingState::Running);
-        return;
-    }
-
     if let Some(outcome) = active.game.tick(&keys) {
         commands.insert_resource(CompletedMinigame {
             id: active.id,
@@ -189,7 +177,7 @@ pub fn run_active_minigame(
         return;
     }
 
-    let status = active.game.status(active.remaining_seconds);
+    let status = active.game.status();
     for mut text in &mut status_labels {
         **text = status.clone();
     }
@@ -209,5 +197,6 @@ pub fn despawn_minigame_window(
 fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
+        MinigameId::SequenceChallenge => Box::new(sequence_challenge::SequenceChallenge::new()),
     }
 }
