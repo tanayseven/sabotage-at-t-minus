@@ -21,7 +21,7 @@ impl MinigameInstance for TapChallenge {
     }
 
     fn instructions(&self) -> &'static str {
-        "Tap SPACE repeatedly before time runs out."
+        "Tap SPACE to drive the line. See the repair manual."
     }
 
     fn status(&self) -> String {

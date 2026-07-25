@@ -5,9 +5,12 @@ use rand::Rng;
 use crate::level::Level;
 use crate::minigames::queue_minigame;
 use crate::player::Player;
+use crate::puzzles::RocketPuzzles;
 use crate::state::PlayingState;
 
-const PORTAL_RADIUS: f32 = 42.0;
+/// How close the player has to come to a breach for it to take them. Also half
+/// the width it is drawn at.
+pub const PORTAL_RADIUS: f32 = 42.0;
 const PORTAL_TEXTURE_SIZE: u32 = 96;
 const PORTAL_PULSE_SPEED: f32 = 4.8;
 const PORTAL_PULSE_MIN_SCALE: f32 = 0.9;
@@ -44,21 +47,18 @@ pub fn spawn_portals(
     commands: &mut Commands,
     images: &mut Assets<Image>,
     level: Level,
+    puzzles: RocketPuzzles,
     marker: impl Bundle + Clone,
 ) {
-    let positions = level.portals();
-    let minigames = level.portal_minigames();
+    let placements = puzzles.portal_placements(level, random_index(level.portal_minigames().len()));
 
-    if positions.is_empty() || minigames.is_empty() {
+    if placements.is_empty() {
         return;
     }
 
     let texture = broken_portal_texture(images);
-    let start_index = random_index(minigames.len());
 
-    for (index, position) in positions.iter().enumerate() {
-        let minigame = minigames[(start_index + index) % minigames.len()];
-
+    for (position, minigame) in placements {
         commands.spawn((
             marker.clone(),
             Portal {

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
 use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
-use crate::minigames::{CompletedMinigame, MinigameId, MinigameOutcome};
+use crate::minigames::{CompletedMinigame, MINIGAME_COUNT, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
 use crate::portal::TriggeredPortal;
 use crate::state::PlayingState;
@@ -77,7 +77,7 @@ pub struct LevelProgress {
 impl LevelProgress {
     pub fn new(level: Level) -> Self {
         Self {
-            total_portals: level.portals().len(),
+            total_portals: level.portal_count(),
             completed_portals: 0,
         }
     }
@@ -258,6 +258,14 @@ pub struct Room {
 /// both. `a_panel_is_clear_of_everything_else_in_its_room` holds this.
 const FIXTURE_ALONG_ROOM: f32 = 0.45;
 
+/// How high above the floor of its room a breach hangs.
+///
+/// Low enough that a player walking the deck passes through it — a portal is
+/// walked into rather than worked, and one hung at head height would be strolled
+/// under and left behind, which on the rocket would mean an airlock that never
+/// unlocks. See `a_portal_in_a_room_is_walked_into`.
+const PORTAL_MOUNT_HEIGHT: f32 = 56.0;
+
 impl Room {
     /// The `index`th room, counting up the rocket a deck at a time. What makes
     /// a room pickable with a single number.
@@ -284,6 +292,15 @@ impl Room {
             BULKHEAD_X + (self.side.hull() - BULKHEAD_X) * FIXTURE_ALONG_ROOM,
             self.floor(),
         )
+    }
+
+    /// The centre of a breach opened in this room. Over the same clear stretch
+    /// of wall the panel is bolted to, which is safe because no two puzzles are
+    /// ever dealt the same room — see [`crate::puzzles::RocketPuzzles`].
+    pub const fn portal_mount(self) -> Vec2 {
+        let at = self.fixture();
+
+        Vec2::new(at.x, at.y + PORTAL_MOUNT_HEIGHT)
     }
 
     /// How the room is named in anything the player reads.
@@ -466,12 +483,25 @@ impl Level {
         self.config().player_spawn
     }
 
+    /// Where this level's portals are written down. The rocket's are not: they
+    /// stand in the rooms dealt for the run, so it is
+    /// [`crate::puzzles::RocketPuzzles`] that says where they are.
     pub fn portals(self) -> &'static [Vec2] {
         self.config().portal_positions
     }
 
     pub fn portal_minigames(self) -> &'static [MinigameId] {
         self.config().portal_minigames
+    }
+
+    /// How many portals this level puts up, which is what the objective counts
+    /// down. Inside the rocket that is one breach per kind of challenge, one
+    /// room each, however the rooms happen to be dealt.
+    pub fn portal_count(self) -> usize {
+        match self {
+            Level::Rocket => MINIGAME_COUNT,
+            _ => self.portals().len(),
+        }
     }
 
     #[allow(dead_code)]
@@ -532,7 +562,7 @@ mod tests {
     use super::{
         AIRLOCK, ASCENT_PLATFORMS, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door,
         FOLLOW_ZOOM, GROUND_TOP, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress, PLATFORM_HEIGHT,
-        UPPER_LADDER_X,
+        ROOM_COUNT, Room, UPPER_LADDER_X,
     };
     use crate::config::{PLAYER_HEIGHT, VIEW_HEIGHT};
 
@@ -579,10 +609,75 @@ mod tests {
         );
     }
 
+    /// The rocket puts up one breach per kind of challenge, so a run works
+    /// every puzzle the game has before it ever reaches the pad.
+    #[test]
+    fn the_rocket_carries_one_of_every_challenge() {
+        use crate::minigames::MINIGAME_COUNT;
+
+        assert_eq!(Level::Rocket.portal_count(), MINIGAME_COUNT);
+        // Its portals stand in the rooms dealt for the run rather than at
+        // positions written into the layout.
+        assert!(Level::Rocket.portals().is_empty());
+    }
+
+    /// A breach is walked into rather than worked, so one hung out of the
+    /// player's way would be strolled past — and the airlock waits on it, so
+    /// that is a run that cannot be finished.
+    #[test]
+    fn a_portal_in_a_room_is_walked_into() {
+        use crate::config::PLAYER_HEIGHT;
+        use crate::portal::PORTAL_RADIUS;
+
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+            let breach = room.portal_mount();
+            let walking_past = Vec2::new(breach.x, room.floor() + PLAYER_HEIGHT / 2.0);
+
+            assert!(
+                walking_past.distance(breach) < PORTAL_RADIUS,
+                "the breach in {} is hung clear of a player walking under it",
+                room.label()
+            );
+        }
+    }
+
+    /// The other fixtures in a room: a breach must not be opened over a ladder
+    /// or across a doorway, where it would take the player every time they went
+    /// to use either.
+    #[test]
+    fn a_portal_is_clear_of_the_ladders_and_the_doors() {
+        use crate::portal::PORTAL_RADIUS;
+
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+            let breach = room.portal_mount();
+
+            for ladder in Level::Rocket.ladders() {
+                let column = ladder.reach();
+                let clear = breach.x + PORTAL_RADIUS <= column.min.x
+                    || breach.x - PORTAL_RADIUS >= column.max.x;
+
+                assert!(
+                    clear,
+                    "the breach in {} is opened over the ladder at x={}",
+                    room.label(),
+                    ladder.x
+                );
+            }
+
+            for door in Level::Rocket.doors() {
+                assert!(
+                    (breach.x - door.at.x).abs() > PORTAL_RADIUS,
+                    "the breach in {} is opened across {door:?}",
+                    room.label()
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_outdoor_levels_have_portals() {
-        assert!(Level::Rocket.portal_anchor().is_none());
-
         assert!(Level::Ascent.portal_anchor().is_some());
         assert!(Level::Ascent.portals().len() > 1);
         assert!(Level::Ascent.portal_minigames().len() > 1);
@@ -698,7 +793,9 @@ mod tests {
         use crate::panel::Panel;
         use crate::physics::configure_physics;
         use crate::player::{Player, jump, move_player, probe_ground};
-        use crate::setup::build_level;
+        use crate::portal::{Portal, enter_portal};
+        use crate::puzzles::RocketPuzzles;
+        use crate::setup::{RunState, build_level};
         use crate::state::{GameState, PlayingState};
         use bevy::asset::AssetPlugin;
         use bevy_rapier2d::prelude::*;
@@ -747,6 +844,7 @@ mod tests {
                 // seed so the crossing is run against a rocket with one in it
                 // rather than one where the pick happened to go elsewhere.
                 app.init_resource::<Panel>();
+                app.init_resource::<RocketPuzzles>();
                 app.insert_resource(LevelProgress::new(Level::Rocket));
                 app.add_systems(
                     Startup,
@@ -754,14 +852,18 @@ mod tests {
                      assets: Res<AssetServer>,
                      mut images: ResMut<Assets<Image>>,
                      panel: Res<Panel>,
+                     puzzles: Res<RocketPuzzles>,
                      progress: Res<LevelProgress>| {
                         build_level(
                             &mut commands,
                             &assets,
                             &mut images,
                             Level::Rocket,
-                            *panel,
-                            *progress,
+                            RunState {
+                                puzzles: *puzzles,
+                                panel: *panel,
+                                progress: *progress,
+                            },
                         );
                     },
                 );
@@ -773,6 +875,9 @@ mod tests {
                         probe_ground,
                         climb_ladder,
                         jump,
+                        // The breaches are walked into rather than worked, so
+                        // this is what says the crossing meets them at all.
+                        enter_portal,
                         use_doors,
                         leave_through_airlock,
                     )
@@ -843,6 +948,25 @@ mod tests {
 
             fn level(&self) -> Level {
                 *self.app.world().resource::<Level>()
+            }
+
+            /// How many of the rocket's breaches the crossing has walked into.
+            fn breaches_met(&mut self) -> usize {
+                let mut query = self.app.world_mut().query::<&Portal>();
+
+                query
+                    .iter(self.app.world())
+                    .filter(|portal| portal.used)
+                    .count()
+            }
+
+            /// Signs off the work the geometry cannot do on its own: the
+            /// minigame overlays are not in this app, so the breaches walked
+            /// into are booked in here.
+            fn sign_off_the_repairs(&mut self) {
+                self.app.world_mut().resource_mut::<Panel>().solved = true;
+                let mut progress = self.app.world_mut().resource_mut::<LevelProgress>();
+                progress.completed_portals = progress.total_portals;
             }
         }
 
@@ -925,8 +1049,17 @@ mod tests {
                 "the run left the rocket before the airlock was worked"
             );
 
-            // The final airlock only opens after the level objective is solved.
-            run.app.world_mut().resource_mut::<Panel>().solved = true;
+            // The route to the airlock walks every room, so it cannot have gone
+            // past a breach without meeting it — a breach strolled past is an
+            // airlock that never unlocks.
+            assert_eq!(
+                run.breaches_met(),
+                Level::Rocket.portal_count(),
+                "the crossing walked past a breach without triggering it"
+            );
+
+            // The final airlock only opens after every job on the level is done.
+            run.sign_off_the_repairs();
             run.step(&[]);
 
             // And out. Working the airlock while standing in it is what ends the
@@ -955,13 +1088,23 @@ mod tests {
         assert!(ground.centre.x + half_width > bounds.max.x);
     }
 
+    /// Inside the rocket every kind of job has to be done: the panel *and* each
+    /// breach. Out on the open levels there is no panel to ask for.
     #[test]
     fn all_obstacles_require_panel_only_when_present() {
         let rocket_progress = LevelProgress::new(Level::Rocket);
         let rocket_room = Level::Rocket.rooms()[0];
 
         assert!(!rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, false));
-        assert!(rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, true));
+        assert!(
+            !rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, true),
+            "the panel alone opened the airlock with breaches still outstanding"
+        );
+
+        let mut rocket_done = LevelProgress::new(Level::Rocket);
+        rocket_done.completed_portals = rocket_done.total_portals;
+        assert!(!rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, false));
+        assert!(rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, true));
 
         let ascent_progress = LevelProgress::new(Level::Ascent);
         assert!(!ascent_progress.all_obstacles_completed(Level::Ascent, rocket_room, false));

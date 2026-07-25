@@ -20,8 +20,9 @@
 use bevy::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH};
-use crate::level::{Level, LevelProgress, ROOM_COUNT, Room};
+use crate::level::{Level, LevelProgress, Room};
 use crate::player::Player;
+use crate::puzzles::{RocketPuzzles, scramble};
 use crate::ui::MUTED_TEXT;
 
 /// How many switches a panel has. The combination is one bit per switch, so
@@ -99,17 +100,12 @@ impl Default for Panel {
     }
 }
 
-/// Spreads a seed over all 64 bits, so seeds a fraction of a second apart pick
-/// unrelated rooms instead of walking along the list. (splitmix64's finaliser.)
-const fn scramble(seed: u64) -> u64 {
-    let mut z = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    z ^ (z >> 31)
-}
-
 impl Panel {
     /// The room and the combination for one run.
+    ///
+    /// The room comes from the same deal that places the breaches, off the same
+    /// seed, so the panel is never installed in a room a portal is already
+    /// standing in.
     ///
     /// The combination is drawn from the settings with at least one switch up,
     /// never from all eight: the switches are spawned down, and a combination of
@@ -117,7 +113,7 @@ impl Panel {
     /// room it is in.
     pub fn from_seed(seed: u64) -> Self {
         let bits = scramble(seed);
-        let room = Room::from_index((bits % ROOM_COUNT as u64) as usize);
+        let room = RocketPuzzles::from_seed(seed).panel_room;
 
         let settings = (1u64 << SWITCH_COUNT) - 1;
         let pattern = 1 + scramble(bits) % settings;
@@ -152,11 +148,32 @@ impl Panel {
         format!("     {}", settings.join("     "))
     }
 
+    /// The HUD's line on the run's outstanding work.
+    ///
+    /// The panel says which room it is in and whether it has been set. The
+    /// breaches only say how many are left: they are lit, they pulse, and the
+    /// crossing goes through every room, so they are met rather than looked for.
     fn status(&self, level: Level, progress: &LevelProgress) -> String {
-        let solved = progress.all_obstacles_completed(level, self.room, self.solved);
-        let state = if solved { "SOLVED" } else { "UNSOLVED" };
+        let mut line = if level.rooms().contains(&self.room) {
+            let state = if self.solved { "SET" } else { "UNSET" };
 
-        format!("Isolation panel · {} · {state}", self.room.label())
+            format!("Isolation panel · {} · {state}", self.room.label())
+        } else {
+            String::new()
+        };
+
+        if progress.total_portals > 0 {
+            if !line.is_empty() {
+                line.push_str("     ");
+            }
+            line.push_str(&format!(
+                "Breaches sealed · {}/{}",
+                progress.completed_portals.min(progress.total_portals),
+                progress.total_portals
+            ));
+        }
+
+        line
     }
 }
 
@@ -186,15 +203,6 @@ pub struct Backplate;
 /// is not the puzzle, and the clock is short.
 #[derive(Component)]
 pub struct PanelStatus;
-
-/// A fresh panel for each run, seeded off the clock. There is no random number
-/// generator in the dependency set and this needs no quality beyond "not the
-/// same room twice in a row": the app has been up for an unpredictable number of
-/// nanoseconds by the time a player starts a run, which is plenty of entropy for
-/// a choice of six.
-pub fn reset_panel(mut commands: Commands, time: Res<Time>) {
-    commands.insert_resource(Panel::from_seed(time.elapsed().as_nanos() as u64));
-}
 
 /// Where the `index`th switch is, in world space.
 fn switch_at(mount: Vec2, index: usize) -> Vec2 {
@@ -444,6 +452,7 @@ pub fn sync_panel_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::level::ROOM_COUNT;
 
     /// Every room has to be one the panel can turn up in, and every setting bar
     /// all-down one it can ask for — otherwise a run's opening is narrower than

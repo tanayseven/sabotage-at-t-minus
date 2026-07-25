@@ -24,10 +24,22 @@ const WIRES_RIGHT_WIDTH: f32 = WIRES_IMAGE_WIDTH - WIRES_RIGHT_START;
 const WIRES_CANVAS_WIDTH: f32 = 336.0;
 const WIRES_CANVAS_HEIGHT: f32 = 170.0;
 
+/// How many kinds of challenge there are. What anything handing out one
+/// challenge per room counts against.
+pub const MINIGAME_COUNT: usize = 2;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     TapChallenge,
     BrokenWire,
+}
+
+impl MinigameId {
+    /// Every challenge in the game, in the order the manual documents them.
+    /// A run installs one of each rather than picking from them, so this is the
+    /// list the rooms are dealt out against.
+    pub const ALL: [MinigameId; MINIGAME_COUNT] =
+        [MinigameId::BrokenWire, MinigameId::TapChallenge];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
