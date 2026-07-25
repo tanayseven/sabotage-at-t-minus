@@ -41,14 +41,30 @@ pub fn spawn_player(
         Anchor(Vec2::new(0.0, PLAYER_ART_ANCHOR)),
         animation,
         Transform::from_xyz(position.x, position.y, 0.0),
+        physics_body(),
+    ));
+}
+
+/// The body the character is simulated as, kept apart from its art so the
+/// physics can be exercised on its own.
+fn physics_body() -> impl Bundle {
+    (
         RigidBody::Dynamic,
         Collider::cuboid(PLAYER_WIDTH / 2.0, PLAYER_HEIGHT / 2.0),
         LockedAxes::ROTATION_LOCKED,
         Velocity::zero(),
         Grounded::default(),
-        Friction::coefficient(0.0),
+        // Zero friction on its own is not enough: Rapier averages the two
+        // colliders' coefficients by default, so a wall's own friction would
+        // still hold the player up while they run into it. Taking the minimum
+        // instead keeps the character frictionless against everything, so a
+        // wall stops the run without ever slowing the fall.
+        Friction {
+            coefficient: 0.0,
+            combine_rule: CoefficientCombineRule::Min,
+        },
         Ccd::enabled(),
-    ));
+    )
 }
 
 pub fn move_player(
@@ -102,5 +118,89 @@ pub fn jump(
         if grounded.0 {
             velocity.linear.y = JUMP_SPEED;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{DESIGN_HEIGHT, GRAVITY, PIXELS_PER_METER, WALL_THICKNESS};
+    use crate::physics::configure_physics;
+    use std::time::Duration;
+
+    const STEP: f32 = 1.0 / 60.0;
+    const STEPS: usize = 30;
+
+    /// How far a body falls from rest under the game's gravity over the whole
+    /// run of the simulation below, with nothing to slow it down.
+    fn free_fall() -> f32 {
+        let seconds = STEP * STEPS as f32;
+        0.5 * GRAVITY * seconds * seconds
+    }
+
+    /// Holds the player against a wall for a moment and reports how far they
+    /// dropped while doing it. Only the physics half of the character is
+    /// spawned, so no renderer or asset server is needed.
+    fn fall_while_running_into_wall() -> f32 {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            TransformPlugin,
+            RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
+        ));
+        // A fixed step keeps the drop reproducible instead of tying it to how
+        // fast the test machine happens to run the app's ticks.
+        app.insert_resource(TimestepMode::Fixed {
+            dt: STEP,
+            substeps: 1,
+        });
+        app.add_systems(Startup, configure_physics);
+        // Stands in for `move_player` holding D down, without an input device.
+        app.add_systems(Update, |mut players: Query<&mut Velocity, With<Player>>| {
+            for mut velocity in &mut players {
+                velocity.linear.x = PLAYER_SPEED;
+            }
+        });
+
+        // A wall like the ones framing the play area: default friction, which
+        // is what the player's own has to be combined against.
+        app.world_mut().spawn((
+            Transform::from_xyz(WALL_THICKNESS, 0.0, 0.0),
+            RigidBody::Fixed,
+            Collider::cuboid(WALL_THICKNESS / 2.0, DESIGN_HEIGHT / 2.0),
+        ));
+
+        let player = app
+            .world_mut()
+            .spawn((Player, Transform::default(), physics_body()))
+            .id();
+
+        for _ in 0..STEPS {
+            // Rapier's fixed step reads the clock, so the world only advances
+            // if each tick reports the time that step covers.
+            app.world_mut()
+                .resource_mut::<Time>()
+                .advance_by(Duration::from_secs_f32(STEP));
+            app.update();
+        }
+
+        -app.world()
+            .entity(player)
+            .get::<Transform>()
+            .unwrap()
+            .translation
+            .y
+    }
+
+    #[test]
+    fn a_wall_does_not_hold_the_player_up() {
+        let fallen = fall_while_running_into_wall();
+
+        // Some loss to the solver is expected; being caught on the wall is not.
+        assert!(
+            fallen > free_fall() * 0.9,
+            "player fell {fallen} against the wall, free fall is {}",
+            free_fall()
+        );
     }
 }
