@@ -18,6 +18,7 @@ use bevy_rapier2d::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
 use crate::level::{Level, LevelEntity, LevelProgress};
+use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
 use crate::setup::build_level;
@@ -223,6 +224,7 @@ pub fn leave_through_airlock(
     assets: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     mut level: ResMut<Level>,
+    panel: Res<Panel>,
     players: Query<&Transform, With<Player>>,
     doors: Query<&Door>,
     built: Query<Entity, With<LevelEntity>>,
@@ -254,6 +256,7 @@ pub fn leave_through_airlock(
             &assets,
             &mut images,
             next_level,
+            *panel,
             LevelProgress::new(next_level),
         );
     } else {
