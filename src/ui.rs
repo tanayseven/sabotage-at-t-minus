@@ -97,6 +97,7 @@ pub fn spawn_hud(commands: &mut Commands, level: Level, panel: &Panel, progress:
         Text::new(
             "Sabotage at T-Minus\nA/D to move, W / space to jump, W/S on a ladder\nE to work a door or throw a switch — M for the repair manual",
         ),
+        TextColor(MUTED_TEXT),
         Node {
             position_type: PositionType::Absolute,
             top: px(16),
