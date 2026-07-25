@@ -399,8 +399,8 @@ pub fn despawn_minigame_window(
 }
 
 fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
-    match id {
-        MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
-        MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
-    }
+    // match id {
+        // Sample: MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
+        Box::new(broken_wire::BrokenWire::new())
+    // }
 }
