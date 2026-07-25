@@ -72,7 +72,8 @@ impl MinigameInstance for BrokenWire {
     fn tick(&mut self, keys: &ButtonInput<KeyCode>, delta_seconds: f32) -> Option<MinigameOutcome> {
         match &mut self.phase {
             BrokenWirePhase::Pulling => {
-                self.separation = (self.separation + SPREAD_SPEED * delta_seconds).min(MAX_SEPARATION);
+                self.separation =
+                    (self.separation + SPREAD_SPEED * delta_seconds).min(MAX_SEPARATION);
 
                 let mut pulls = 0.0;
                 if keys.just_pressed(KeyCode::KeyA) {
@@ -91,7 +92,8 @@ impl MinigameInstance for BrokenWire {
                     };
                 }
             }
-            BrokenWirePhase::JointedArmingZap { remaining } | BrokenWirePhase::Jointed { remaining } => {
+            BrokenWirePhase::JointedArmingZap { remaining }
+            | BrokenWirePhase::Jointed { remaining } => {
                 *remaining -= delta_seconds;
                 if *remaining <= 0.0 {
                     self.separation = 0.0;

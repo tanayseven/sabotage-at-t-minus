@@ -184,8 +184,7 @@ pub fn sync_airlock_lock_state(
         return;
     }
 
-    let lock_airlock =
-        !progress.all_obstacles_completed(*level, panel.room, panel.solved);
+    let lock_airlock = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
 
     for (mut door, mut sprite) in &mut doors {
         if door.kind != DoorKind::Airlock {
@@ -267,11 +266,9 @@ pub fn leave_through_airlock(
     };
     let at = player.translation.truncate();
 
-    let stepped_out = doors
-        .iter()
-        .any(|door| {
-            door.kind == DoorKind::Airlock && door.open && !door.locked && door.in_reach(at)
-        });
+    let stepped_out = doors.iter().any(|door| {
+        door.kind == DoorKind::Airlock && door.open && !door.locked && door.in_reach(at)
+    });
 
     let Some(next) = stepped_out.then(|| level.next()) else {
         return;

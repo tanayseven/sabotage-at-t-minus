@@ -132,7 +132,10 @@ fn main() {
                 reset_manual_page,
             ),
         )
-        .add_systems(OnEnter(PlayingState::Running), apply_pending_level_transition)
+        .add_systems(
+            OnEnter(PlayingState::Running),
+            apply_pending_level_transition,
+        )
         // The character is driven the same way on the launch pad as in the
         // level, so this is registered once for both rather than twice. Chained
         // because each step reads what the one before it wrote: the ray probe
@@ -210,9 +213,8 @@ fn main() {
         // the player does this frame.
         .add_systems(
             Update,
-            tick_countdown.run_if(
-                in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame)),
-            ),
+            tick_countdown
+                .run_if(in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame))),
         )
         .add_systems(
             Update,
@@ -226,9 +228,17 @@ fn main() {
         )
         .add_systems(
             OnExit(GameState::Playing),
-            (despawn_game, stop_music, reset_camera, clear_active_minigame),
+            (
+                despawn_game,
+                stop_music,
+                reset_camera,
+                clear_active_minigame,
+            ),
         )
-        .add_systems(OnEnter(PlayingState::Minigame), (spawn_minigame_window, pause_physics))
+        .add_systems(
+            OnEnter(PlayingState::Minigame),
+            (spawn_minigame_window, pause_physics),
+        )
         .add_systems(
             Update,
             run_active_minigame.run_if(in_state(PlayingState::Minigame)),

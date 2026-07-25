@@ -343,10 +343,7 @@ const ASCENT_PORTALS: [Vec2; 3] = [
     Vec2::new(560.0, GROUND_TOP + 260.0 + 48.0),
 ];
 
-const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [
-    MinigameId::TapChallenge,
-    MinigameId::BrokenWire,
-];
+const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [MinigameId::TapChallenge, MinigameId::BrokenWire];
 
 const ASCENT_CONFIG: LevelConfig = LevelConfig {
     platforms: &ASCENT_PLATFORMS,
@@ -534,8 +531,8 @@ mod tests {
 
     use super::{
         AIRLOCK, ASCENT_PLATFORMS, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door,
-        FOLLOW_ZOOM, GROUND_TOP, LADDER_GAP, Level, LevelProgress, LOWER_LADDER_X,
-        PLATFORM_HEIGHT, UPPER_LADDER_X,
+        FOLLOW_ZOOM, GROUND_TOP, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress, PLATFORM_HEIGHT,
+        UPPER_LADDER_X,
     };
     use crate::config::{PLAYER_HEIGHT, VIEW_HEIGHT};
 
@@ -568,12 +565,18 @@ mod tests {
 
     #[test]
     fn ascent_has_a_final_exit_door() {
-        assert_eq!(Level::Ascent.doors()[0].kind, crate::door::DoorKind::Airlock);
+        assert_eq!(
+            Level::Ascent.doors()[0].kind,
+            crate::door::DoorKind::Airlock
+        );
     }
 
     #[test]
     fn upper_deck_has_a_final_exit_door() {
-        assert_eq!(Level::UpperDeck.doors()[0].kind, crate::door::DoorKind::Airlock);
+        assert_eq!(
+            Level::UpperDeck.doors()[0].kind,
+            crate::door::DoorKind::Airlock
+        );
     }
 
     #[test]
@@ -596,7 +599,10 @@ mod tests {
 
         assert_ne!(ascent.platforms.as_ptr(), upper.platforms.as_ptr());
         assert_ne!(ascent.crates.as_ptr(), upper.crates.as_ptr());
-        assert_ne!(Level::Ascent.player_spawn(), Level::UpperDeck.player_spawn());
+        assert_ne!(
+            Level::Ascent.player_spawn(),
+            Level::UpperDeck.player_spawn()
+        );
     }
 
     #[test]

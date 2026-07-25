@@ -28,7 +28,11 @@ impl MinigameInstance for TapChallenge {
         format!("Pulses: {}/{}", self.taps, GOAL_TAPS)
     }
 
-    fn tick(&mut self, keys: &ButtonInput<KeyCode>, _delta_seconds: f32) -> Option<MinigameOutcome> {
+    fn tick(
+        &mut self,
+        keys: &ButtonInput<KeyCode>,
+        _delta_seconds: f32,
+    ) -> Option<MinigameOutcome> {
         if keys.just_pressed(KeyCode::Space) {
             self.taps += 1;
             if self.taps >= GOAL_TAPS {

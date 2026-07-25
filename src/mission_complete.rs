@@ -79,7 +79,13 @@ pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
                             ..default()
                         })
                         .with_children(|row| {
-                            spawn_button(row, button_label, MissionCompleteButton, DIALOG_BUTTON_SIZE, DIALOG_BUTTON_FONT);
+                            spawn_button(
+                                row,
+                                button_label,
+                                MissionCompleteButton,
+                                DIALOG_BUTTON_SIZE,
+                                DIALOG_BUTTON_FONT,
+                            );
                         });
                 });
         });
@@ -98,7 +104,11 @@ pub fn mission_complete_action(
         .iter()
         .any(|interaction| *interaction == Interaction::Pressed);
 
-    if clicked || keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Escape) || keys.just_pressed(KeyCode::Space) {
+    if clicked
+        || keys.just_pressed(KeyCode::Enter)
+        || keys.just_pressed(KeyCode::Escape)
+        || keys.just_pressed(KeyCode::Space)
+    {
         if let Some(next_level) = level.next() {
             commands.insert_resource(PendingLevelAdvance(next_level));
             next_playing.set(PlayingState::Running);

@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use bevy::audio::Volume;
+use bevy::prelude::*;
 
 use crate::settings::Settings;
 use crate::state::PlayingState;
@@ -133,10 +133,7 @@ pub fn spawn_minigame_window(
         let instructions = game.instructions();
         let status = game.status();
 
-        commands.insert_resource(ActiveMinigame {
-            id,
-            game,
-        });
+        commands.insert_resource(ActiveMinigame { id, game });
         commands.remove_resource::<PendingMinigame>();
 
         (id, title, instructions, status)
@@ -237,7 +234,9 @@ pub fn spawn_minigame_window(
                                             position_type: PositionType::Absolute,
                                             width: percent(100.0),
                                             height: px(WIRES_IMAGE_HEIGHT),
-                                            top: px((WIRES_CANVAS_HEIGHT - WIRES_IMAGE_HEIGHT) * 0.5),
+                                            top: px(
+                                                (WIRES_CANVAS_HEIGHT - WIRES_IMAGE_HEIGHT) * 0.5
+                                            ),
                                             ..default()
                                         },
                                     ))

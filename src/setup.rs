@@ -5,7 +5,7 @@ use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
 use crate::level::{Level, LevelEntity, LevelProgress, PendingLevelAdvance};
 use crate::manual::ManualPage;
-use crate::panel::{spawn_panel, Panel};
+use crate::panel::{Panel, spawn_panel};
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
 use crate::portal::spawn_portals;
@@ -82,7 +82,14 @@ pub fn apply_pending_level_transition(
 
     commands.insert_resource(pending.0);
     let (panel, progress) = reset_run_state(&mut commands, pending.0, &time);
-    build_level(&mut commands, &assets, &mut images, pending.0, panel, progress);
+    build_level(
+        &mut commands,
+        &assets,
+        &mut images,
+        pending.0,
+        panel,
+        progress,
+    );
     spawn_hud(&mut commands, pending.0, &panel, &progress);
     commands.remove_resource::<PendingLevelAdvance>();
 }

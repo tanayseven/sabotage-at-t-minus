@@ -61,7 +61,10 @@ pub fn spawn_portals(
 
         commands.spawn((
             marker.clone(),
-            Portal { minigame, used: false },
+            Portal {
+                minigame,
+                used: false,
+            },
             PortalPulse,
             Sprite {
                 image: texture.clone(),
@@ -87,14 +90,20 @@ pub fn enter_portal(
     let nearest = portals
         .iter_mut()
         .filter(|(_, portal_transform, portal)| {
-            !portal.used && portal_transform.translation.truncate().distance(player_pos) <= PORTAL_RADIUS
+            !portal.used
+                && portal_transform.translation.truncate().distance(player_pos) <= PORTAL_RADIUS
         })
         .min_by(|(_, one_transform, _), (_, other_transform, _)| {
             one_transform
                 .translation
                 .truncate()
                 .distance_squared(player_pos)
-                .total_cmp(&other_transform.translation.truncate().distance_squared(player_pos))
+                .total_cmp(
+                    &other_transform
+                        .translation
+                        .truncate()
+                        .distance_squared(player_pos),
+                )
         });
 
     let Some((entity, _, mut portal)) = nearest else {
@@ -105,7 +114,9 @@ pub fn enter_portal(
     commands.insert_resource(TriggeredPortal(entity));
     queue_minigame(
         &mut commands,
-        crate::minigames::MinigameConfig { id: portal.minigame },
+        crate::minigames::MinigameConfig {
+            id: portal.minigame,
+        },
     );
     next_playing.set(PlayingState::Minigame);
 }
@@ -216,12 +227,7 @@ pub fn update_portal_sparks(
         let size = spark.start_size * (0.8 + life * 0.5);
 
         sprite.custom_size = Some(Vec2::splat(size));
-        sprite.color = Color::srgba(
-            1.0,
-            0.76 - 0.22 * heat,
-            0.3 - 0.2 * heat,
-            alpha,
-        );
+        sprite.color = Color::srgba(1.0, 0.76 - 0.22 * heat, 0.3 - 0.2 * heat, alpha);
     }
 }
 
@@ -245,9 +251,8 @@ fn broken_portal_texture(images: &mut Assets<Image>) -> Handle<Image> {
             }
 
             let angle = ny.atan2(nx);
-            let ring_center = 0.58
-                + 0.06 * (angle * 5.0).sin()
-                + 0.03 * (angle * 11.0 + radius * 14.0).sin();
+            let ring_center =
+                0.58 + 0.06 * (angle * 5.0).sin() + 0.03 * (angle * 11.0 + radius * 14.0).sin();
             let ring_thickness = 0.12 + 0.03 * (angle * 9.0).cos();
             let ring_distance = (radius - ring_center).abs();
 
