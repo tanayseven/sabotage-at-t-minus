@@ -20,6 +20,7 @@ mod player;
 mod player_animation;
 mod portal;
 mod props;
+mod puzzles;
 mod quit;
 mod settings;
 mod setup;
@@ -56,11 +57,12 @@ use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
 };
-use crate::panel::{Panel, flip_switches, light_panel, reset_panel, sync_panel_status};
+use crate::panel::{Panel, flip_switches, light_panel, sync_panel_status};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
 use crate::portal::{emit_portal_sparks, enter_portal, pulse_portal, update_portal_sparks};
+use crate::puzzles::RocketPuzzles;
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{apply_pending_level_transition, despawn_game, setup};
@@ -96,6 +98,7 @@ fn main() {
         .init_resource::<MissionTimer>()
         .init_resource::<Level>()
         .init_resource::<Panel>()
+        .init_resource::<RocketPuzzles>()
         .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
@@ -127,7 +130,9 @@ fn main() {
         .add_systems(
             OnEnter(GameState::Playing),
             (
-                (reset_level, reset_panel, setup).chain(),
+                // `setup` deals the run's puzzles and the panel off one seed,
+                // so nothing else may insert either ahead of it.
+                (reset_level, setup).chain(),
                 start_music,
                 reset_manual_page,
             ),

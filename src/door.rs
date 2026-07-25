@@ -21,7 +21,8 @@ use crate::level::{Level, LevelEntity, LevelProgress};
 use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
-use crate::setup::build_level;
+use crate::puzzles::RocketPuzzles;
+use crate::setup::{RunState, build_level};
 use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
@@ -257,6 +258,7 @@ pub fn leave_through_airlock(
     mut images: ResMut<Assets<Image>>,
     mut level: ResMut<Level>,
     panel: Res<Panel>,
+    puzzles: Res<RocketPuzzles>,
     players: Query<&Transform, With<Player>>,
     doors: Query<&Door>,
     built: Query<Entity, With<LevelEntity>>,
@@ -277,7 +279,8 @@ pub fn leave_through_airlock(
 
     if let Some(next_level) = next {
         *level = next_level;
-        commands.insert_resource(LevelProgress::new(next_level));
+        let progress = LevelProgress::new(next_level);
+        commands.insert_resource(progress);
 
         for entity in &built {
             commands.entity(entity).despawn();
@@ -287,8 +290,11 @@ pub fn leave_through_airlock(
             &assets,
             &mut images,
             next_level,
-            *panel,
-            LevelProgress::new(next_level),
+            RunState {
+                puzzles: *puzzles,
+                panel: *panel,
+                progress,
+            },
         );
     } else {
         next_playing.set(PlayingState::MissionComplete);

@@ -80,14 +80,14 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 4] = [
+const PAGES: [Page; 5] = [
     Page {
         heading: "Read This First",
         lines: &[
             "The rocket leaves at T-00:00 whether or not it is airworthy.",
             "Three systems were tampered with while the pad was clear.",
-            "Each has a page. Work them in the order they are printed —",
-            "a fix made out of sequence will not hold through ignition.",
+            "Each has a page, and each is in a room of its own — the crew",
+            "route to the airlock walks every room, so none can be missed.",
             "",
             "Turn pages with the arrow keys. Esc puts the manual away.",
             "The clock does not stop while you have your nose in it.",
@@ -110,13 +110,26 @@ const PAGES: [Page; 4] = [
         heading: "1. Damaged Signal Relay Notes",
         lines: &[
             "Fault: a snapped pair feeding the ignition run.",
+            "Found where the deck arcs over: walk into it to take it on.",
             "",
             "Grip both loose ends and work them back together.",
             "Tap A, then D, in quick alternation to pull them tight.",
             "",
             "If one hand leads too long, the gap widens again.",
             "Keep an even rhythm until the crackle holds steady.",
-            "Then release and move on.",
+        ],
+    },
+    Page {
+        heading: "2. Core Relay Bypass Notes",
+        lines: &[
+            "Fault: the core relay was filed down and will not hold.",
+            "It arcs in its own room, the same as the signal relay.",
+            "",
+            "There is no fixing it on the clock. Bypass it instead:",
+            "drive the line by hand until the charge carries itself.",
+            "",
+            "Tap SPACE, steadily, until the pulse count is made up.",
+            "Stopping short lets the charge bleed back out of it.",
         ],
     },
     // TODO: Document as more minigames are added.
@@ -162,11 +175,11 @@ const PAGES: [Page; 4] = [
     Page {
         heading: "Sign-Off",
         lines: &[
-            "Before you clear the pad, walk the three in reverse:",
+            "The airlock stays locked until all three are signed off:",
             "",
-            "  Relay seated, arming light steady.",
-            "  Nozzle swinging through full travel.",
-            "  Coolant pressure up, no frost on the skin.",
+            "  Isolation panel set, all three lamps up.",
+            "  Signal relay jointed, the crackle steady.",
+            "  Core relay bypassed, the charge carrying itself.",
             "",
             "Then get clear. The clock does not wait for the paperwork.",
         ],
