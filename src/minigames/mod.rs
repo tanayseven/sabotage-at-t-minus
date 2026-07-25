@@ -398,7 +398,7 @@ pub fn despawn_minigame_window(
     commands.remove_resource::<ActiveMinigame>();
 }
 
-fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
+fn new_minigame(_id: MinigameId) -> Box<dyn MinigameInstance> {
     // match id {
         // Sample: MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
         Box::new(broken_wire::BrokenWire::new())
