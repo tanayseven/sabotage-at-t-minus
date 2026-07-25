@@ -18,7 +18,7 @@ const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.45, 0.60);
 
 const HUD_QUIT_SIZE: Vec2 = Vec2::new(120.0, 44.0);
 const HUD_QUIT_FONT: f32 = 22.0;
-const HUD_COUNTDOWN_FONT: f32 = 30.0;
+const HUD_COUNTDOWN_FONT: f32 = 56.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
 const BACK_BUTTON_FONT: f32 = 24.0;
@@ -98,6 +98,26 @@ pub fn spawn_hud(commands: &mut Commands) {
         },
     ));
 
+    // The clock is the thing the player is racing, so it gets the middle of the
+    // top edge to itself, at a size that reads without being looked for. The row
+    // spans the full width to centre it, which would otherwise put an invisible
+    // node over the quit button in the corner — hence ignoring picking.
+    commands
+        .spawn((
+            GameEntity,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(16),
+                width: percent(100),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|parent| {
+            spawn_countdown(parent, HUD_COUNTDOWN_FONT);
+        });
+
     commands
         .spawn((
             GameEntity,
@@ -105,14 +125,11 @@ pub fn spawn_hud(commands: &mut Commands) {
                 position_type: PositionType::Absolute,
                 top: px(16),
                 right: px(16),
-                // The countdown stacks under the quit button in this corner.
-                flex_direction: FlexDirection::Column,
                 ..default()
             },
         ))
         .with_children(|parent| {
             spawn_button(parent, "Quit", QuitButton, HUD_QUIT_SIZE, HUD_QUIT_FONT);
-            spawn_countdown(parent, HUD_COUNTDOWN_FONT);
         });
 }
 

@@ -25,6 +25,7 @@ pub fn reset_mission_timer(mut commands: Commands) {
 }
 
 /// Spawned as part of the HUD, so it lives and dies with the rest of the run.
+/// Its row does the centring, so the label itself carries no layout of its own.
 pub fn spawn_countdown(parent: &mut ChildSpawnerCommands, font_size: f32) {
     parent.spawn((
         CountdownLabel,
@@ -34,11 +35,6 @@ pub fn spawn_countdown(parent: &mut ChildSpawnerCommands, font_size: f32) {
             ..default()
         },
         TextColor(MUTED_TEXT),
-        Node {
-            margin: UiRect::top(px(12)),
-            align_self: AlignSelf::Center,
-            ..default()
-        },
     ));
 }
 
