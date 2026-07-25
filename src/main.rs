@@ -34,7 +34,7 @@ use bevy_rapier2d::prelude::*;
 
 use crate::camera::{apply_level_camera, follow_player, reset_camera, setup_camera};
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
-use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
+use crate::countdown::{MissionTimer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
 use crate::door::{leave_through_airlock, use_doors};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
@@ -56,7 +56,7 @@ use crate::options::{
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
-use crate::portal::{enter_portal, pulse_portal, reset_portal};
+use crate::portal::{enter_portal, pulse_portal};
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{apply_pending_level_transition, despawn_game, setup};
@@ -124,9 +124,7 @@ fn main() {
             (
                 (reset_level, setup).chain(),
                 start_music,
-                reset_mission_timer,
                 reset_manual_page,
-                reset_portal,
             ),
         )
         .add_systems(OnEnter(PlayingState::Running), apply_pending_level_transition)
@@ -187,7 +185,9 @@ fn main() {
         // the player does this frame.
         .add_systems(
             Update,
-            tick_countdown.run_if(in_state(PlayingState::Running)),
+            tick_countdown.run_if(
+                in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame)),
+            ),
         )
         .add_systems(Update, pulse_portal.run_if(in_state(PlayingState::Running)))
         .add_systems(Update, enter_portal.run_if(in_state(PlayingState::Running)))

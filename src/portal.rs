@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::level::Level;
 use crate::minigames::queue_minigame;
@@ -12,74 +13,91 @@ const PORTAL_PULSE_SPEED: f32 = 4.0;
 const PORTAL_PULSE_MIN_SCALE: f32 = 0.92;
 const PORTAL_PULSE_MAX_SCALE: f32 = 1.10;
 
-#[derive(Component, Clone)]
-pub struct Portal;
+#[derive(Component, Clone, Copy)]
+pub struct Portal {
+    pub minigame: crate::minigames::MinigameId,
+    pub used: bool,
+}
 
 #[derive(Component)]
 pub struct PortalPulse;
 
-#[derive(Resource, Default)]
-pub struct PortalState {
-    pub used: bool,
-}
-
-pub fn reset_portal(mut commands: Commands) {
-    commands.insert_resource(PortalState::default());
-}
-
-pub fn spawn_portal(
+pub fn spawn_portals(
     commands: &mut Commands,
     images: &mut Assets<Image>,
     level: Level,
-    marker: impl Bundle,
+    marker: impl Bundle + Clone,
 ) {
-    let Some(position) = level.portal_anchor() else {
+    let positions = level.portals();
+    let minigames = level.portal_minigames();
+
+    if positions.is_empty() || minigames.is_empty() {
         return;
-    };
+    }
+
     let texture = red_circle_texture(images);
 
-    commands.spawn((
-        marker,
-        Portal,
-        PortalPulse,
-        Sprite {
-            image: texture,
-            custom_size: Some(Vec2::splat(PORTAL_RADIUS * 2.0)),
-            ..default()
-        },
-        Transform::from_xyz(position.x, position.y, 2.0),
-    ));
+    for position in positions {
+        let minigame = choose_portal_minigame(minigames).unwrap();
+
+        commands.spawn((
+            marker.clone(),
+            Portal { minigame, used: false },
+            PortalPulse,
+            Sprite {
+                image: texture.clone(),
+                custom_size: Some(Vec2::splat(PORTAL_RADIUS * 2.0)),
+                ..default()
+            },
+            Transform::from_xyz(position.x, position.y, 2.0),
+        ));
+    }
 }
 
 pub fn enter_portal(
     mut commands: Commands,
-    level: Res<Level>,
-    mut portal_state: ResMut<PortalState>,
     players: Query<&Transform, With<Player>>,
-    portals: Query<&Transform, With<Portal>>,
+    mut portals: Query<(&Transform, &mut Portal)>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
-    if portal_state.used {
-        return;
-    }
-
     let Some(player) = players.iter().next() else {
         return;
     };
 
     let player_pos = player.translation.truncate();
-    let entered = portals
-        .iter()
-        .any(|portal| portal.translation.truncate().distance(player_pos) <= PORTAL_RADIUS);
+    let nearest = portals
+        .iter_mut()
+        .filter(|(portal_transform, portal)| {
+            !portal.used && portal_transform.translation.truncate().distance(player_pos) <= PORTAL_RADIUS
+        })
+        .min_by(|(one_transform, _), (other_transform, _)| {
+            one_transform
+                .translation
+                .truncate()
+                .distance_squared(player_pos)
+                .total_cmp(&other_transform.translation.truncate().distance_squared(player_pos))
+        });
 
-    if entered {
-        let Some(minigame) = level.minigame() else {
-            return;
-        };
+    let Some((_, mut portal)) = nearest else {
+        return;
+    };
 
-        portal_state.used = true;
-        queue_minigame(&mut commands, minigame);
-        next_playing.set(PlayingState::Minigame);
+    portal.used = true;
+    queue_minigame(
+        &mut commands,
+        crate::minigames::MinigameConfig { id: portal.minigame },
+    );
+    next_playing.set(PlayingState::Minigame);
+}
+
+pub fn choose_portal_minigame(minigames: &[crate::minigames::MinigameId]) -> Option<crate::minigames::MinigameId> {
+    if minigames.is_empty() {
+        None
+    } else {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_nanos() as usize);
+        Some(minigames[nanos % minigames.len()])
     }
 }
 

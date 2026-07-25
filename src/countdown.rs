@@ -4,9 +4,8 @@ use crate::config::{MISSION_SECONDS, URGENT_SECONDS};
 use crate::state::PlayingState;
 use crate::ui::{ACCENT, MUTED_TEXT};
 
-/// The launch clock for a single run. Ticks only while gameplay is running, so
-/// it stands still behind the confirm-quit dialog, and is rebuilt from scratch
-/// every time a run starts.
+/// The clock for the current level. It keeps ticking through portal minigames,
+/// but pauses behind confirm-quit and other non-gameplay overlays.
 #[derive(Resource)]
 pub struct MissionTimer(Timer);
 
@@ -20,6 +19,7 @@ impl Default for MissionTimer {
 #[derive(Component)]
 pub struct CountdownLabel;
 
+#[allow(dead_code)]
 pub fn reset_mission_timer(mut commands: Commands) {
     commands.insert_resource(MissionTimer::default());
 }

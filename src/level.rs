@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
 use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
-use crate::minigames::{CompletedMinigame, MinigameConfig, MinigameId, MinigameOutcome};
+use crate::minigames::{CompletedMinigame, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
 use crate::state::PlayingState;
 use crate::wall::Wall;
@@ -21,7 +21,7 @@ use crate::wall::Wall;
 pub struct LevelEntity;
 
 /// Which scene the current run is in. Levels run in the order below, and the
-/// mission clock spans the whole run.
+/// mission clock resets for each level.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     /// Where the run starts: rooms inside the rocket.
@@ -62,10 +62,33 @@ pub struct LevelConfig {
     pub crates: &'static [Vec2],
     pub player_spawn: Vec2,
     pub camera: CameraMode,
-    pub minigame: Option<MinigameConfig>,
-    pub portal_ahead: f32,
-    pub portal_up: f32,
-    pub portal_camera_inset: f32,
+    pub portal_positions: &'static [Vec2],
+    pub portal_minigames: &'static [MinigameId],
+}
+
+/// How much of the current level's portal objective has been completed.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelProgress {
+    pub total_portals: usize,
+    pub completed_portals: usize,
+}
+
+impl LevelProgress {
+    pub fn new(level: Level) -> Self {
+        Self {
+            total_portals: level.portals().len(),
+            completed_portals: 0,
+        }
+    }
+
+    pub fn complete_portal(&mut self) -> bool {
+        self.completed_portals = self.completed_portals.saturating_add(1);
+        self.all_portals_completed()
+    }
+
+    pub fn all_portals_completed(&self) -> bool {
+        self.completed_portals >= self.total_portals
+    }
 }
 
 /// Top of the floor, shared by the rocket's bottom deck and the outside ground.
@@ -158,10 +181,8 @@ const ROCKET_CONFIG: LevelConfig = LevelConfig {
             ROCKET_CEILING,
         ),
     },
-    minigame: None,
-    portal_ahead: 0.0,
-    portal_up: 0.0,
-    portal_camera_inset: 0.0,
+    portal_positions: &[],
+    portal_minigames: &[],
 };
 
 // ---------------------------------------------------------------------------
@@ -192,28 +213,38 @@ const ASCENT_CRATES: [Vec2; 5] = [
     Vec2::new(1740.0, GROUND_TOP + 860.0),
 ];
 
+const ASCENT_EXIT_X: f32 = 2048.0;
+const ASCENT_EXIT: Door = Door::airlock(ASCENT_EXIT_X, GROUND_TOP + 870.0);
+
 const EMPTY_WALLS: [Wall; 0] = [];
 const EMPTY_LADDERS: [Ladder; 0] = [];
-const EMPTY_DOORS: [Door; 0] = [];
+
+const ASCENT_DOORS: [Door; 1] = [ASCENT_EXIT];
+
+const ASCENT_PORTALS: [Vec2; 3] = [
+    Vec2::new(-1600.0, GROUND_TOP + 180.0 + 48.0),
+    Vec2::new(-880.0, GROUND_TOP + 210.0 + 48.0),
+    Vec2::new(560.0, GROUND_TOP + 260.0 + 48.0),
+];
+
+const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [
+    MinigameId::TapChallenge,
+    MinigameId::SequenceChallenge,
+];
 
 const ASCENT_CONFIG: LevelConfig = LevelConfig {
     platforms: &ASCENT_PLATFORMS,
     walls: &EMPTY_WALLS,
     ladders: &EMPTY_LADDERS,
-    doors: &EMPTY_DOORS,
+    doors: &ASCENT_DOORS,
     crates: &ASCENT_CRATES,
     player_spawn: Vec2::new(-2050.0, GROUND_TOP + 60.0),
     camera: CameraMode::Follow {
         zoom: FOLLOW_ZOOM,
         bounds: FOLLOW_BOUNDS,
     },
-    minigame: Some(MinigameConfig {
-        id: MinigameId::TapChallenge,
-        time_limit_seconds: 8.0,
-    }),
-    portal_ahead: 110.0,
-    portal_up: 48.0,
-    portal_camera_inset: 20.0,
+    portal_positions: &ASCENT_PORTALS,
+    portal_minigames: &ASCENT_PORTAL_MINIGAMES,
 };
 
 // ---------------------------------------------------------------------------
@@ -233,7 +264,7 @@ const UPPER_DECK_PLATFORMS: [Platform; 13] = [
     Platform::with_top(1120.0, GROUND_TOP + 520.0, 210.0),
     Platform::with_top(1320.0, GROUND_TOP + 640.0, 210.0),
     Platform::with_top(1520.0, GROUND_TOP + 760.0, 210.0),
-    Platform::with_top(1720.0, GROUND_TOP + 880.0, 210.0),
+    Platform::with_top(1980.0, GROUND_TOP + 880.0, 240.0),
 ];
 
 const UPPER_DECK_CRATES: [Vec2; 5] = [
@@ -244,24 +275,31 @@ const UPPER_DECK_CRATES: [Vec2; 5] = [
     Vec2::new(1720.0, UPPER_DECK_PLATFORMS[12].top() + 120.0),
 ];
 
+const UPPER_DECK_PORTALS: [Vec2; 4] = [
+    Vec2::new(-1480.0, UPPER_DECK_PLATFORMS[1].top() + 48.0),
+    Vec2::new(-840.0, UPPER_DECK_PLATFORMS[3].top() + 48.0),
+    Vec2::new(120.0, UPPER_DECK_PLATFORMS[6].top() + 48.0),
+    Vec2::new(760.0, UPPER_DECK_PLATFORMS[8].top() + 48.0),
+];
+
+const UPPER_DECK_EXIT_X: f32 = 2048.0;
+const UPPER_DECK_EXIT: Door = Door::airlock(UPPER_DECK_EXIT_X, UPPER_DECK_PLATFORMS[12].top());
+
+const UPPER_DECK_DOORS: [Door; 1] = [UPPER_DECK_EXIT];
+
 const UPPER_DECK_CONFIG: LevelConfig = LevelConfig {
     platforms: &UPPER_DECK_PLATFORMS,
     walls: &EMPTY_WALLS,
     ladders: &EMPTY_LADDERS,
-    doors: &EMPTY_DOORS,
+    doors: &UPPER_DECK_DOORS,
     crates: &UPPER_DECK_CRATES,
     player_spawn: Vec2::new(-2000.0, GROUND_TOP + 60.0),
     camera: CameraMode::Follow {
         zoom: FOLLOW_ZOOM,
         bounds: FOLLOW_BOUNDS,
     },
-    minigame: Some(MinigameConfig {
-        id: MinigameId::TapChallenge,
-        time_limit_seconds: 8.0,
-    }),
-    portal_ahead: 110.0,
-    portal_up: 48.0,
-    portal_camera_inset: 20.0,
+    portal_positions: &UPPER_DECK_PORTALS,
+    portal_minigames: &ASCENT_PORTAL_MINIGAMES,
 };
 
 impl Level {
@@ -305,21 +343,17 @@ impl Level {
         self.config().player_spawn
     }
 
-    pub fn minigame(self) -> Option<MinigameConfig> {
-        self.config().minigame
+    pub fn portals(self) -> &'static [Vec2] {
+        self.config().portal_positions
     }
 
-    pub fn portal_anchor(self) -> Option<Vec2> {
-        let config = self.config();
-        config.minigame?;
+    pub fn portal_minigames(self) -> &'static [MinigameId] {
+        self.config().portal_minigames
+    }
 
-        let last = &config.platforms[config.platforms.len() - 1];
-        let desired_x = last.centre.x + last.width / 2.0 + config.portal_ahead;
-        let visible_limit_x = 2100.0 - config.portal_camera_inset;
-        Some(Vec2::new(
-            desired_x.min(visible_limit_x),
-            last.top() + config.portal_up,
-        ))
+    #[allow(dead_code)]
+    pub fn portal_anchor(self) -> Option<Vec2> {
+        self.portals().first().copied()
     }
 
     pub fn camera(self) -> CameraMode {
@@ -343,6 +377,8 @@ pub struct PendingLevelAdvance(pub Level);
 pub fn react_to_minigame_result(
     mut commands: Commands,
     completed: Option<Res<CompletedMinigame>>,
+    mut progress: ResMut<LevelProgress>,
+    mut doors: Query<(&mut Door, &mut Sprite)>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Some(completed) = completed else {
@@ -350,11 +386,17 @@ pub fn react_to_minigame_result(
     };
 
     match (completed.id, completed.outcome) {
-        (MinigameId::TapChallenge, MinigameOutcome::Success) => {
-            next_playing.set(PlayingState::MissionComplete);
+        (_, MinigameOutcome::Success) => {
+            if progress.complete_portal() {
+                for (mut door, mut sprite) in &mut doors {
+                    if door.kind == crate::door::DoorKind::Airlock {
+                        door.locked = false;
+                        sprite.color = door.color();
+                    }
+                }
+            }
         }
-        (MinigameId::TapChallenge, MinigameOutcome::Failure)
-        | (MinigameId::TapChallenge, MinigameOutcome::TimedOut) => {
+        (_, MinigameOutcome::Failure) | (_, MinigameOutcome::TimedOut) => {
             next_playing.set(PlayingState::GameOver);
         }
     }
@@ -387,18 +429,34 @@ mod tests {
 
         assert!(Level::Ascent.walls().is_empty());
         assert!(Level::Ascent.ladders().is_empty());
-        assert!(Level::Ascent.doors().is_empty());
+        assert_eq!(Level::Ascent.doors().len(), 1);
+
+        assert!(Level::UpperDeck.walls().is_empty());
+        assert!(Level::UpperDeck.ladders().is_empty());
+        assert_eq!(Level::UpperDeck.doors().len(), 1);
     }
 
     #[test]
-    fn ascent_and_upper_deck_have_portal_minigames() {
+    fn ascent_has_a_final_exit_door() {
+        assert_eq!(Level::Ascent.doors()[0].kind, crate::door::DoorKind::Airlock);
+    }
+
+    #[test]
+    fn upper_deck_has_a_final_exit_door() {
+        assert_eq!(Level::UpperDeck.doors()[0].kind, crate::door::DoorKind::Airlock);
+    }
+
+    #[test]
+    fn the_outdoor_levels_have_portals() {
         assert!(Level::Rocket.portal_anchor().is_none());
-        assert!(Level::Rocket.minigame().is_none());
 
         assert!(Level::Ascent.portal_anchor().is_some());
-        assert!(Level::Ascent.minigame().is_some());
+        assert!(Level::Ascent.portals().len() > 1);
+        assert!(Level::Ascent.portal_minigames().len() > 1);
+
         assert!(Level::UpperDeck.portal_anchor().is_some());
-        assert!(Level::UpperDeck.minigame().is_some());
+        assert!(Level::UpperDeck.portals().len() > 1);
+        assert!(Level::UpperDeck.portal_minigames().len() > 1);
     }
 
     #[test]

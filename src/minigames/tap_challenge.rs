@@ -23,13 +23,8 @@ impl MinigameInstance for TapChallenge {
         "Tap SPACE repeatedly before time runs out."
     }
 
-    fn status(&self, remaining_seconds: f32) -> String {
-        format!(
-            "Pulses: {}/{}   Time: {:.1}s",
-            self.taps,
-            GOAL_TAPS,
-            remaining_seconds.max(0.0)
-        )
+    fn status(&self) -> String {
+        format!("Pulses: {}/{}", self.taps, GOAL_TAPS)
     }
 
     fn tick(&mut self, keys: &ButtonInput<KeyCode>) -> Option<MinigameOutcome> {

@@ -2,13 +2,12 @@ use bevy::prelude::*;
 
 use crate::countdown::MissionTimer;
 use crate::manual::ManualPage;
-use crate::level::{Level, LevelEntity, PendingLevelAdvance};
+use crate::level::{Level, LevelEntity, LevelProgress, PendingLevelAdvance};
 use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
-use crate::portal::spawn_portal;
-use crate::portal::PortalState;
+use crate::portal::spawn_portals;
 use crate::props::spawn_props;
 use crate::tiles::load_tiles;
 use crate::ui::spawn_hud;
@@ -26,15 +25,17 @@ pub fn setup(
     mut images: ResMut<Assets<Image>>,
     level: Res<Level>,
 ) {
-    reset_run_state(&mut commands);
-    build_level(&mut commands, &assets, &mut images, *level);
+    let progress = reset_run_state(&mut commands, *level);
+    build_level(&mut commands, &assets, &mut images, *level, progress);
     spawn_hud(&mut commands);
 }
 
-fn reset_run_state(commands: &mut Commands) {
+fn reset_run_state(commands: &mut Commands, level: Level) -> LevelProgress {
     commands.insert_resource(MissionTimer::default());
     commands.insert_resource(ManualPage::default());
-    commands.insert_resource(PortalState::default());
+    let progress = LevelProgress::new(level);
+    commands.insert_resource(progress);
+    progress
 }
 
 /// Everything belonging to one level, built from that level's own layout.
@@ -43,15 +44,16 @@ pub fn build_level(
     assets: &AssetServer,
     images: &mut Assets<Image>,
     level: Level,
+    progress: LevelProgress,
 ) {
     let tiles = load_tiles(assets);
 
     spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
     spawn_ladders(commands, assets, level.ladders(), LevelEntity);
-    spawn_doors(commands, level.doors(), LevelEntity);
+    spawn_doors(commands, level.doors(), LevelEntity, progress);
     spawn_props(commands, level.crates(), LevelEntity);
-    spawn_portal(commands, images, level, LevelEntity);
+    spawn_portals(commands, images, level, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
 }
 
@@ -72,8 +74,8 @@ pub fn apply_pending_level_transition(
     }
 
     commands.insert_resource(pending.0);
-    reset_run_state(&mut commands);
-    build_level(&mut commands, &assets, &mut images, pending.0);
+    let progress = reset_run_state(&mut commands, pending.0);
+    build_level(&mut commands, &assets, &mut images, pending.0, progress);
     spawn_hud(&mut commands);
     commands.remove_resource::<PendingLevelAdvance>();
 }
