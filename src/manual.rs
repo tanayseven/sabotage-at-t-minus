@@ -80,7 +80,7 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 6] = [
+const PAGES: [Page; 4] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -107,7 +107,21 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "1. Coolant Line, Bay 2",
+        heading: "1. Damaged Signal Relay Notes",
+        lines: &[
+            "Fault: a snapped pair feeding the ignition run.",
+            "",
+            "Grip both loose ends and work them back together.",
+            "Tap A, then D, in quick alternation to pull them tight.",
+            "",
+            "If one hand leads too long, the gap widens again.",
+            "Keep an even rhythm until the crackle holds steady.",
+            "Then release and move on.",
+        ],
+    },
+    // TODO: Document as more minigames are added.
+    /* Page {
+        heading: "2. Coolant Line, Bay 2",
         lines: &[
             "Symptom: frost on the outer skin, pressure reading flat.",
             "",
@@ -120,7 +134,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "2. Gimbal Lock, Engine Mount",
+        heading: "3. Gimbal Lock, Engine Mount",
         lines: &[
             "Symptom: the nozzle will not swing; steering is dead.",
             "",
@@ -133,7 +147,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "3. Ignition Relay, Upper Deck",
+        heading: "4. Ignition Relay, Upper Deck",
         lines: &[
             "Symptom: the arming light stays dark on a good circuit.",
             "",
@@ -144,7 +158,7 @@ const PAGES: [Page; 6] = [
             "",
             "A flickering light means the relay is in but not home.",
         ],
-    },
+    }, */
     Page {
         heading: "Sign-Off",
         lines: &[
@@ -371,11 +385,12 @@ fn body_text(page: ManualPage, panel: &Panel) -> String {
 /// `M` toggles, so whether a press opens or closes depends on what the other
 /// half would have done with it.
 ///
-/// Runs while the game is running, like any other in-game control, and takes
-/// the keyboard as [`ResMut`] so it can eat the keys it acts on. That matters
-/// for exactly one of them: `Escape` closes the manual if it is open, and the
-/// confirm-quit dialog — which runs after this — must not also see that press
-/// and take it as a request to abort the mission.
+/// Runs while a run is active — both in moment-to-moment play and while a
+/// minigame overlay is up — and takes the keyboard as [`ResMut`] so it can eat
+/// the keys it acts on. That matters for exactly one of them: `Escape` closes
+/// the manual if it is open, and the confirm-quit dialog — which runs after
+/// this while in normal play — must not also see that press and take it as a
+/// request to abort the mission.
 pub fn manual_controls(
     mut commands: Commands,
     mut keys: ResMut<ButtonInput<KeyCode>>,
@@ -455,9 +470,8 @@ pub fn sync_manual_page(
     }
 }
 
-/// Puts the manual away whenever the run stops running — the confirm-quit
-/// dialog, the game-over screen, or quitting out altogether. Those are modal
-/// and the manual is not, so it would otherwise sit on top of them.
+/// Puts the manual away when entering modal end-of-run screens (quit, game
+/// over, mission complete) and when leaving gameplay altogether.
 pub fn despawn_manual(mut commands: Commands, screens: Query<Entity, With<ManualScreen>>) {
     for entity in &screens {
         commands.entity(entity).despawn();

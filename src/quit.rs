@@ -16,6 +16,10 @@ pub struct QuitButton;
 #[derive(Component)]
 pub struct QuitDialog;
 
+/// Which gameplay sub-state to return to when dismissing the quit dialog.
+#[derive(Resource, Debug, Clone)]
+pub struct QuitResumeState(pub PlayingState);
+
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub enum QuitChoice {
     ToMenu,
@@ -24,8 +28,10 @@ pub enum QuitChoice {
 
 #[allow(clippy::type_complexity)]
 pub fn open_quit_dialog(
+    mut commands: Commands,
     buttons: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
     keys: Res<ButtonInput<KeyCode>>,
+    playing: Res<State<PlayingState>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let clicked = buttons
@@ -33,6 +39,7 @@ pub fn open_quit_dialog(
         .any(|interaction| *interaction == Interaction::Pressed);
 
     if clicked || keys.just_pressed(KeyCode::Escape) {
+        commands.insert_resource(QuitResumeState(playing.get().clone()));
         next_playing.set(PlayingState::ConfirmQuit);
     }
 }
@@ -113,6 +120,7 @@ pub fn spawn_quit_dialog(mut commands: Commands) {
 pub fn quit_dialog_action(
     buttons: Query<(&Interaction, &QuitChoice), Changed<Interaction>>,
     keys: Res<ButtonInput<KeyCode>>,
+    resume: Option<Res<QuitResumeState>>,
     mut next_game: ResMut<NextState<GameState>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
@@ -135,7 +143,10 @@ pub fn quit_dialog_action(
         // Leaving `Playing` tears the sub-state down with it, so the dialog is
         // despawned by `despawn_quit_dialog` on the same transition.
         Some(QuitChoice::ToMenu) => next_game.set(GameState::Menu),
-        Some(QuitChoice::KeepPlaying) => next_playing.set(PlayingState::Running),
+        Some(QuitChoice::KeepPlaying) => {
+            let fallback = PlayingState::Running;
+            next_playing.set(resume.map_or(fallback, |state| state.0.clone()));
+        }
         None => {}
     }
 }
@@ -144,4 +155,6 @@ pub fn despawn_quit_dialog(mut commands: Commands, dialog: Query<Entity, With<Qu
     for entity in &dialog {
         commands.entity(entity).despawn();
     }
+
+    commands.remove_resource::<QuitResumeState>();
 }

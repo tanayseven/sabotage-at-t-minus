@@ -10,6 +10,7 @@ use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
 use crate::minigames::{CompletedMinigame, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
+use crate::portal::TriggeredPortal;
 use crate::state::PlayingState;
 use crate::wall::Wall;
 
@@ -344,7 +345,7 @@ const ASCENT_PORTALS: [Vec2; 3] = [
 
 const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [
     MinigameId::TapChallenge,
-    MinigameId::SequenceChallenge,
+    MinigameId::BrokenWire,
 ];
 
 const ASCENT_CONFIG: LevelConfig = LevelConfig {
@@ -502,6 +503,7 @@ pub struct PendingLevelAdvance(pub Level);
 pub fn react_to_minigame_result(
     mut commands: Commands,
     completed: Option<Res<CompletedMinigame>>,
+    triggered_portal: Option<Res<TriggeredPortal>>,
     mut progress: ResMut<LevelProgress>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
@@ -512,12 +514,16 @@ pub fn react_to_minigame_result(
     match (completed.id, completed.outcome) {
         (_, MinigameOutcome::Success) => {
             progress.complete_portal();
+            if let Some(triggered_portal) = triggered_portal {
+                commands.entity(triggered_portal.0).despawn();
+            }
         }
         (_, MinigameOutcome::Failure) | (_, MinigameOutcome::TimedOut) => {
             next_playing.set(PlayingState::GameOver);
         }
     }
 
+    commands.remove_resource::<TriggeredPortal>();
     commands.remove_resource::<CompletedMinigame>();
 }
 
