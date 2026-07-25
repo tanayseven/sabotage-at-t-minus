@@ -29,7 +29,7 @@ pub fn setup(
 ) {
     let (panel, progress) = reset_run_state(&mut commands, *level, &time);
     build_level(&mut commands, &assets, &mut images, *level, panel, progress);
-    spawn_hud(&mut commands, &panel);
+    spawn_hud(&mut commands, *level, &panel, &progress);
 }
 
 fn reset_run_state(commands: &mut Commands, level: Level, time: &Time) -> (Panel, LevelProgress) {
@@ -56,7 +56,7 @@ pub fn build_level(
     spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
     spawn_ladders(commands, assets, level.ladders(), LevelEntity);
-    spawn_doors(commands, level.doors(), LevelEntity, progress);
+    spawn_doors(commands, level.doors(), LevelEntity, level, panel, progress);
     spawn_panel(commands, &panel, level, LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
     spawn_portals(commands, images, level, LevelEntity);
@@ -83,7 +83,7 @@ pub fn apply_pending_level_transition(
     commands.insert_resource(pending.0);
     let (panel, progress) = reset_run_state(&mut commands, pending.0, &time);
     build_level(&mut commands, &assets, &mut images, pending.0, panel, progress);
-    spawn_hud(&mut commands, &panel);
+    spawn_hud(&mut commands, pending.0, &panel, &progress);
     commands.remove_resource::<PendingLevelAdvance>();
 }
 

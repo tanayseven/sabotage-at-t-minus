@@ -143,13 +143,15 @@ pub fn spawn_doors(
     commands: &mut Commands,
     doors: &[Door],
     marker: impl Bundle + Clone,
+    level: Level,
+    panel: Panel,
     progress: crate::level::LevelProgress,
 ) {
     for door in doors {
         let mut door = *door;
 
         if door.kind == DoorKind::Airlock {
-            door.locked = !progress.all_portals_completed();
+            door.locked = !progress.all_obstacles_completed(level, panel.room, panel.solved);
         }
 
         commands.spawn((
@@ -164,6 +166,36 @@ pub fn spawn_doors(
             RigidBody::Fixed,
             Collider::cuboid(DOOR_SIZE.x / 2.0, DOOR_SIZE.y / 2.0),
         ));
+    }
+}
+
+/// Keeps the airlock lock state aligned with the current level objective.
+///
+/// The objective is solved only when every obstacle type present on the level
+/// is solved: panel switches (if this level has the panel) and portal
+/// minigames (if this level has portals).
+pub fn sync_airlock_lock_state(
+    level: Res<Level>,
+    panel: Res<Panel>,
+    progress: Res<LevelProgress>,
+    mut doors: Query<(&mut Door, &mut Sprite)>,
+) {
+    if !level.is_changed() && !panel.is_changed() && !progress.is_changed() {
+        return;
+    }
+
+    let lock_airlock =
+        !progress.all_obstacles_completed(*level, panel.room, panel.solved);
+
+    for (mut door, mut sprite) in &mut doors {
+        if door.kind != DoorKind::Airlock {
+            continue;
+        }
+
+        if door.locked != lock_airlock {
+            door.locked = lock_airlock;
+            sprite.color = door.color();
+        }
     }
 }
 
@@ -247,6 +279,7 @@ pub fn leave_through_airlock(
 
     if let Some(next_level) = next {
         *level = next_level;
+        commands.insert_resource(LevelProgress::new(next_level));
 
         for entity in &built {
             commands.entity(entity).despawn();
@@ -358,6 +391,8 @@ mod tests {
                 &mut commands,
                 &[BULKHEAD_DOOR],
                 (),
+                Level::Rocket,
+                Panel::default(),
                 LevelProgress::new(Level::Rocket),
             );
         });
@@ -444,6 +479,8 @@ mod tests {
                 &mut commands,
                 Level::Rocket.doors(),
                 (),
+                Level::Rocket,
+                Panel::default(),
                 LevelProgress::new(Level::Rocket),
             );
         });
