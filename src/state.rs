@@ -13,9 +13,11 @@ pub enum GameState {
     Playing,
 }
 
-/// Exists only while we are in [`GameState::Playing`]. The confirm-quit dialog
-/// is modal, so it gets its own state rather than a flag: gameplay systems and
-/// the physics pipeline stand down for as long as the dialog is up.
+/// Exists only while we are in [`GameState::Playing`]. Everything that is modal
+/// over a run gets a variant here rather than a flag: gameplay systems and the
+/// physics pipeline stand down for as long as one of them is up. The repair
+/// manual is deliberately not among them — it is an overlay the run carries on
+/// underneath, so it has no state of its own.
 #[derive(SubStates, Default, Debug, Clone, PartialEq, Eq, Hash)]
 #[source(GameState = GameState::Playing)]
 pub enum PlayingState {

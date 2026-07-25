@@ -5,6 +5,7 @@ mod credits;
 mod gameover;
 mod launchpad;
 mod level;
+mod manual;
 mod menu;
 mod music;
 mod options;
@@ -33,6 +34,9 @@ use crate::credits::{despawn_credits, spawn_credits};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
 use crate::level::{Level, reset_level};
+use crate::manual::{
+    ManualPage, despawn_manual, manual_controls, reset_manual_page, sync_manual_page,
+};
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
 use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
@@ -75,6 +79,7 @@ fn main() {
         .init_resource::<Settings>()
         .init_resource::<MissionTimer>()
         .init_resource::<Level>()
+        .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
         .add_systems(
@@ -108,6 +113,7 @@ fn main() {
                 (reset_level, setup).chain(),
                 start_music,
                 reset_mission_timer,
+                reset_manual_page,
             ),
         )
         // The character is driven the same way on the launch pad as in the
@@ -121,9 +127,15 @@ fn main() {
                 .chain()
                 .run_if(in_state(GameState::Launchpad).or_else(in_state(PlayingState::Running))),
         )
+        // Chained, and in this order, for two reasons: a page turned this frame
+        // should be on screen this frame rather than a frame behind the press,
+        // and `Escape` closing the manual must be eaten before the quit dialog
+        // reads it as an abort.
         .add_systems(
             Update,
-            open_quit_dialog.run_if(in_state(PlayingState::Running)),
+            (manual_controls, sync_manual_page, open_quit_dialog)
+                .chain()
+                .run_if(in_state(PlayingState::Running)),
         )
         // Frames the level a run opens on.
         .add_systems(
@@ -162,6 +174,9 @@ fn main() {
             OnExit(PlayingState::ConfirmQuit),
             (despawn_quit_dialog, resume_physics),
         )
+        // The manual is an overlay rather than a state, so it is cleared on the
+        // way out of a running run instead of on its own transition.
+        .add_systems(OnExit(PlayingState::Running), despawn_manual)
         .add_systems(
             OnEnter(PlayingState::GameOver),
             (spawn_game_over, pause_physics),
