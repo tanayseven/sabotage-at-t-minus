@@ -46,7 +46,9 @@ use crate::manual::{
     ManualPage, despawn_manual, manual_controls, reset_manual_page, sync_manual_page,
 };
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
-use crate::minigames::{despawn_minigame_window, run_active_minigame, spawn_minigame_window};
+use crate::minigames::{
+    clear_active_minigame, despawn_minigame_window, run_active_minigame, spawn_minigame_window,
+};
 use crate::mission_complete::{
     despawn_mission_complete, mission_complete_action, spawn_mission_complete,
 };
@@ -173,15 +175,21 @@ fn main() {
                 .chain()
                 .run_if(in_state(PlayingState::Running)),
         )
-        // Chained, and in this order, for two reasons: a page turned this frame
-        // should be on screen this frame rather than a frame behind the press,
-        // and `Escape` closing the manual must be eaten before the quit dialog
-        // reads it as an abort.
+        // Chained so page turns and closes are reflected the same frame they
+        // are requested, both while running and while a minigame overlay is up.
         .add_systems(
             Update,
-            (manual_controls, sync_manual_page, open_quit_dialog)
+            (manual_controls, sync_manual_page)
                 .chain()
-                .run_if(in_state(PlayingState::Running)),
+                .run_if(in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame))),
+        )
+        // Runs after manual controls so `Escape` consumed by the manual does
+        // not also trigger a quit dialog while the run is active.
+        .add_systems(
+            Update,
+            open_quit_dialog
+                .after(sync_manual_page)
+                .run_if(in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame))),
         )
         // Frames the level a run opens on.
         .add_systems(
@@ -218,7 +226,7 @@ fn main() {
         )
         .add_systems(
             OnExit(GameState::Playing),
-            (despawn_game, stop_music, reset_camera),
+            (despawn_game, stop_music, reset_camera, clear_active_minigame),
         )
         .add_systems(OnEnter(PlayingState::Minigame), (spawn_minigame_window, pause_physics))
         .add_systems(
@@ -231,7 +239,7 @@ fn main() {
         )
         .add_systems(
             OnEnter(PlayingState::ConfirmQuit),
-            (spawn_quit_dialog, pause_physics),
+            (despawn_manual, spawn_quit_dialog, pause_physics),
         )
         .add_systems(
             Update,
@@ -241,12 +249,9 @@ fn main() {
             OnExit(PlayingState::ConfirmQuit),
             (despawn_quit_dialog, resume_physics),
         )
-        // The manual is an overlay rather than a state, so it is cleared on the
-        // way out of a running run instead of on its own transition.
-        .add_systems(OnExit(PlayingState::Running), despawn_manual)
         .add_systems(
             OnEnter(PlayingState::GameOver),
-            (spawn_game_over, pause_physics),
+            (despawn_manual, spawn_game_over, pause_physics),
         )
         .add_systems(
             Update,
@@ -258,8 +263,9 @@ fn main() {
         )
         .add_systems(
             OnEnter(PlayingState::MissionComplete),
-            (spawn_mission_complete, pause_physics),
+            (despawn_manual, spawn_mission_complete, pause_physics),
         )
+        .add_systems(OnExit(GameState::Playing), despawn_manual)
         .add_systems(
             Update,
             mission_complete_action.run_if(in_state(PlayingState::MissionComplete)),

@@ -385,11 +385,12 @@ fn body_text(page: ManualPage, panel: &Panel) -> String {
 /// `M` toggles, so whether a press opens or closes depends on what the other
 /// half would have done with it.
 ///
-/// Runs while the game is running, like any other in-game control, and takes
-/// the keyboard as [`ResMut`] so it can eat the keys it acts on. That matters
-/// for exactly one of them: `Escape` closes the manual if it is open, and the
-/// confirm-quit dialog — which runs after this — must not also see that press
-/// and take it as a request to abort the mission.
+/// Runs while a run is active — both in moment-to-moment play and while a
+/// minigame overlay is up — and takes the keyboard as [`ResMut`] so it can eat
+/// the keys it acts on. That matters for exactly one of them: `Escape` closes
+/// the manual if it is open, and the confirm-quit dialog — which runs after
+/// this while in normal play — must not also see that press and take it as a
+/// request to abort the mission.
 pub fn manual_controls(
     mut commands: Commands,
     mut keys: ResMut<ButtonInput<KeyCode>>,
@@ -469,9 +470,8 @@ pub fn sync_manual_page(
     }
 }
 
-/// Puts the manual away whenever the run stops running — the confirm-quit
-/// dialog, the game-over screen, or quitting out altogether. Those are modal
-/// and the manual is not, so it would otherwise sit on top of them.
+/// Puts the manual away when entering modal end-of-run screens (quit, game
+/// over, mission complete) and when leaving gameplay altogether.
 pub fn despawn_manual(mut commands: Commands, screens: Query<Entity, With<ManualScreen>>) {
     for entity in &screens {
         commands.entity(entity).despawn();

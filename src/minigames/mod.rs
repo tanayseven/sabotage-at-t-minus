@@ -122,26 +122,36 @@ pub fn spawn_minigame_window(
     mut commands: Commands,
     assets: Res<AssetServer>,
     pending: Option<Res<PendingMinigame>>,
+    active: Option<Res<ActiveMinigame>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
-    let Some(pending) = pending else {
-        // Nothing queued; return to running rather than trapping the player.
+    let (id, title, instructions, status) = if let Some(pending) = pending {
+        let config = pending.0;
+        let id = config.id;
+        let game = new_minigame(id);
+        let title = game.title();
+        let instructions = game.instructions();
+        let status = game.status();
+
+        commands.insert_resource(ActiveMinigame {
+            id,
+            game,
+        });
+        commands.remove_resource::<PendingMinigame>();
+
+        (id, title, instructions, status)
+    } else if let Some(active) = active {
+        (
+            active.id,
+            active.game.title(),
+            active.game.instructions(),
+            active.game.status(),
+        )
+    } else {
+        // Nothing queued or active; return to running rather than trapping.
         next_playing.set(PlayingState::Running);
         return;
     };
-
-    let config = pending.0;
-    let id = config.id;
-    let game = new_minigame(id);
-    let title = game.title();
-    let instructions = game.instructions();
-    let status = game.status();
-
-    commands.insert_resource(ActiveMinigame {
-        id,
-        game,
-    });
-    commands.remove_resource::<PendingMinigame>();
 
     commands
         .spawn((
@@ -155,7 +165,9 @@ pub fn spawn_minigame_window(
                 ..default()
             },
             BackgroundColor(OVERLAY_SCRIM),
-            GlobalZIndex(2),
+            // Keep the HUD/manual above the scrim so timer and controls remain
+            // readable and interactive while a minigame is open.
+            GlobalZIndex(-1),
         ))
         .with_children(|overlay| {
             overlay
@@ -334,6 +346,7 @@ pub fn run_active_minigame(
             id: active.id,
             outcome,
         });
+        commands.remove_resource::<ActiveMinigame>();
         next_playing.set(PlayingState::Running);
         return;
     }
@@ -399,8 +412,12 @@ pub fn despawn_minigame_window(
     for entity in &windows {
         commands.entity(entity).despawn();
     }
+}
 
+pub fn clear_active_minigame(mut commands: Commands) {
     commands.remove_resource::<ActiveMinigame>();
+    commands.remove_resource::<PendingMinigame>();
+    commands.remove_resource::<CompletedMinigame>();
 }
 
 fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
