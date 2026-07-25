@@ -12,6 +12,13 @@ const PORTAL_TEXTURE_SIZE: u32 = 96;
 const PORTAL_PULSE_SPEED: f32 = 4.8;
 const PORTAL_PULSE_MIN_SCALE: f32 = 0.9;
 const PORTAL_PULSE_MAX_SCALE: f32 = 1.14;
+const SPARK_EMIT_RATE: f32 = 22.0;
+const SPARK_MIN_SPEED: f32 = 45.0;
+const SPARK_MAX_SPEED: f32 = 160.0;
+const SPARK_MIN_LIFETIME: f32 = 0.09;
+const SPARK_MAX_LIFETIME: f32 = 0.26;
+const SPARK_MIN_SIZE: f32 = 1.5;
+const SPARK_MAX_SIZE: f32 = 3.4;
 
 #[derive(Component, Clone, Copy)]
 pub struct Portal {
@@ -21,6 +28,14 @@ pub struct Portal {
 
 #[derive(Component)]
 pub struct PortalPulse;
+
+#[derive(Component)]
+pub struct PortalSpark {
+    velocity: Vec2,
+    lifetime: f32,
+    start_lifetime: f32,
+    start_size: f32,
+}
 
 pub fn spawn_portals(
     commands: &mut Commands,
@@ -125,6 +140,83 @@ pub fn pulse_portal(
             0.2 + 0.25 * intensity,
             0.15 + 0.2 * intensity,
             0.75 + 0.25 * intensity,
+        );
+    }
+}
+
+pub fn emit_portal_sparks(
+    mut commands: Commands,
+    time: Res<Time>,
+    portals: Query<&Transform, (With<PortalPulse>, With<Portal>)>,
+) {
+    let mut rng = rand::thread_rng();
+    let dt = time.delta_secs();
+    let chance = (SPARK_EMIT_RATE * dt).clamp(0.0, 1.0);
+
+    for transform in &portals {
+        if rng.gen_range(0.0..1.0) > chance {
+            continue;
+        }
+
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let radial = rng.gen_range(PORTAL_RADIUS * 0.55..PORTAL_RADIUS * 0.95);
+        let offset = Vec2::from_angle(angle) * radial;
+
+        let lifetime = rng.gen_range(SPARK_MIN_LIFETIME..SPARK_MAX_LIFETIME);
+        let speed = rng.gen_range(SPARK_MIN_SPEED..SPARK_MAX_SPEED);
+        let drift = Vec2::from_angle(angle + rng.gen_range(-0.45..0.45)) * speed;
+        let size = rng.gen_range(SPARK_MIN_SIZE..SPARK_MAX_SIZE);
+
+        commands.spawn((
+            PortalSpark {
+                velocity: drift,
+                lifetime,
+                start_lifetime: lifetime,
+                start_size: size,
+            },
+            Sprite {
+                color: Color::srgba(1.0, 0.74, 0.25, 0.95),
+                custom_size: Some(Vec2::splat(size)),
+                ..default()
+            },
+            Transform::from_xyz(
+                transform.translation.x + offset.x,
+                transform.translation.y + offset.y,
+                transform.translation.z + 0.5,
+            ),
+        ));
+    }
+}
+
+pub fn update_portal_sparks(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut sparks: Query<(Entity, &mut PortalSpark, &mut Transform, &mut Sprite)>,
+) {
+    let dt = time.delta_secs();
+
+    for (entity, mut spark, mut transform, mut sprite) in &mut sparks {
+        spark.lifetime -= dt;
+        if spark.lifetime <= 0.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        transform.translation.x += spark.velocity.x * dt;
+        transform.translation.y += spark.velocity.y * dt;
+        spark.velocity *= 0.92;
+
+        let life = spark.lifetime / spark.start_lifetime;
+        let alpha = (life * life).clamp(0.0, 1.0);
+        let heat = (1.0 - life).clamp(0.0, 1.0);
+        let size = spark.start_size * (0.8 + life * 0.5);
+
+        sprite.custom_size = Some(Vec2::splat(size));
+        sprite.color = Color::srgba(
+            1.0,
+            0.76 - 0.22 * heat,
+            0.3 - 0.2 * heat,
+            alpha,
         );
     }
 }

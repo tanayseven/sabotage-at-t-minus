@@ -58,7 +58,7 @@ use crate::panel::{Panel, flip_switches, light_panel, reset_panel, sync_panel_st
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
-use crate::portal::{enter_portal, pulse_portal};
+use crate::portal::{emit_portal_sparks, enter_portal, pulse_portal, update_portal_sparks};
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{apply_pending_level_transition, despawn_game, setup};
@@ -206,7 +206,11 @@ fn main() {
                 in_state(PlayingState::Running).or_else(in_state(PlayingState::Minigame)),
             ),
         )
-        .add_systems(Update, pulse_portal.run_if(in_state(PlayingState::Running)))
+        .add_systems(
+            Update,
+            (pulse_portal, emit_portal_sparks, update_portal_sparks)
+                .run_if(in_state(PlayingState::Running)),
+        )
         .add_systems(Update, enter_portal.run_if(in_state(PlayingState::Running)))
         .add_systems(
             Update,
