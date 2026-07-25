@@ -46,7 +46,13 @@ pub fn spawn_player(
         LockedAxes::ROTATION_LOCKED,
         Velocity::zero(),
         Grounded::default(),
-        Friction::coefficient(0.0),
+        // Take the lower of the two coefficients rather than the average, or
+        // the walls' own friction would still be enough to hang the player up
+        // on a surface they are pressed against mid-fall.
+        Friction {
+            coefficient: 0.0,
+            combine_rule: CoefficientCombineRule::Min,
+        },
         Ccd::enabled(),
     ));
 }
