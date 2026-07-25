@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use rand::Rng;
 
-use crate::level::Level;
 use crate::minigames::queue_minigame;
 use crate::player::Player;
 use crate::puzzles::RocketPuzzles;
@@ -46,19 +45,12 @@ pub struct PortalSpark {
 pub fn spawn_portals(
     commands: &mut Commands,
     images: &mut Assets<Image>,
-    level: Level,
     puzzles: RocketPuzzles,
     marker: impl Bundle + Clone,
 ) {
-    let placements = puzzles.portal_placements(level, random_index(level.portal_minigames().len()));
-
-    if placements.is_empty() {
-        return;
-    }
-
     let texture = broken_portal_texture(images);
 
-    for (position, minigame) in placements {
+    for (position, minigame) in puzzles.portal_placements() {
         commands.spawn((
             marker.clone(),
             Portal {
@@ -119,15 +111,6 @@ pub fn enter_portal(
         },
     );
     next_playing.set(PlayingState::Minigame);
-}
-
-fn random_index(len: usize) -> usize {
-    if len == 0 {
-        return 0;
-    }
-
-    // Use the RNG crate instead of wall-clock modulo so initial picks are unbiased.
-    rand::thread_rng().gen_range(0..len)
 }
 
 pub fn pulse_portal(

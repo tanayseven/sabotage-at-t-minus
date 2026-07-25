@@ -13,7 +13,7 @@
 
 use bevy::prelude::*;
 
-use crate::level::{Level, ROOM_COUNT, Room};
+use crate::level::{ROOM_COUNT, Room};
 use crate::minigames::{MINIGAME_COUNT, MinigameId};
 
 /// One room for the panel and one for each challenge.
@@ -59,38 +59,15 @@ impl RocketPuzzles {
         }
     }
 
-    /// Where this level's portals stand and which challenge each one opens.
-    ///
-    /// Inside the rocket that is one per room dealt above. Out on the open
-    /// levels there are no rooms to deal, so the positions are the level's own
-    /// and the challenges are handed round them from `first_minigame`, which is
-    /// what keeps a second run of the same ledges from being the same order of
-    /// jobs.
-    pub fn portal_placements(
-        &self,
-        level: Level,
-        first_minigame: usize,
-    ) -> Vec<(Vec2, MinigameId)> {
-        if level == Level::Rocket {
-            return self
-                .portal_rooms
-                .iter()
-                .zip(MinigameId::ALL)
-                .map(|(room, minigame)| (room.portal_mount(), minigame))
-                .collect();
-        }
-
-        let minigames = level.portal_minigames();
-        if minigames.is_empty() {
-            return Vec::new();
-        }
-
-        level
-            .portals()
-            .iter()
-            .enumerate()
-            .map(|(index, at)| (*at, minigames[(first_minigame + index) % minigames.len()]))
-            .collect()
+    /// Where the run's breaches stand and which challenge each one opens: one
+    /// per room dealt above, in the order the manual documents them.
+    pub fn portal_placements(&self) -> [(Vec2, MinigameId); MINIGAME_COUNT] {
+        std::array::from_fn(|index| {
+            (
+                self.portal_rooms[index].portal_mount(),
+                MinigameId::ALL[index],
+            )
+        })
     }
 }
 
@@ -177,14 +154,13 @@ mod tests {
         assert!(differ.count() >= 6, "the deal barely moves between seeds");
     }
 
-    /// Inside the rocket the portals stand in the rooms that were dealt, one per
-    /// kind of challenge, so a run works every puzzle the game has.
+    /// The breaches stand in the rooms that were dealt, one per kind of
+    /// challenge, so a run works every puzzle the game has.
     #[test]
-    fn the_rocket_stands_one_portal_of_each_kind_in_its_own_room() {
+    fn one_portal_of_each_kind_stands_in_its_own_room() {
         let puzzles = RocketPuzzles::from_seed(5);
-        let placements = puzzles.portal_placements(Level::Rocket, 0);
+        let placements = puzzles.portal_placements();
 
-        assert_eq!(placements.len(), MINIGAME_COUNT);
         for minigame in MinigameId::ALL {
             assert!(
                 placements.iter().any(|(_, id)| *id == minigame),
@@ -194,22 +170,6 @@ mod tests {
 
         for (index, (at, _)) in placements.iter().enumerate() {
             assert_eq!(*at, puzzles.portal_rooms[index].portal_mount());
-        }
-    }
-
-    /// The open levels keep the portals their layout draws, and only the order
-    /// the challenges are handed round them moves.
-    #[test]
-    fn the_open_levels_keep_their_own_portal_positions() {
-        let puzzles = RocketPuzzles::from_seed(5);
-
-        for level in [Level::Ascent, Level::UpperDeck] {
-            let placements = puzzles.portal_placements(level, 1);
-
-            assert_eq!(placements.len(), level.portals().len());
-            for (placement, at) in placements.iter().zip(level.portals()) {
-                assert_eq!(placement.0, *at);
-            }
         }
     }
 }

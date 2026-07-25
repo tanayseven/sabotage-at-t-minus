@@ -81,9 +81,8 @@ const REACH: Vec2 = Vec2::new(
 );
 
 /// The panel of one run: where it is, what it wants, and whether it has been
-/// given it. A resource rather than a component because the answer outlives the
-/// level geometry — the run carries on out of the rocket, and the panel does not
-/// come with it.
+/// given it. A resource rather than a component because the answer is dealt
+/// before the level is built and outlives the geometry built from it.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Panel {
     pub room: Room,
@@ -240,9 +239,7 @@ pub fn plate_bounds(panel: &Panel) -> Rect {
     }
 }
 
-/// Builds the panel into the level, if this is the level its room is on. The
-/// ascent has no rooms, so the panel simply does not come with the run when it
-/// leaves the rocket.
+/// Builds the panel into the level, if this is the level its room is on.
 pub fn spawn_panel(
     commands: &mut Commands,
     panel: &Panel,
@@ -616,9 +613,18 @@ mod tests {
     /// the decks are ever moved.
     const DECK_HEIGHT_FOR_TESTS: f32 = Room::from_index(2).floor() - Room::from_index(0).floor();
 
+    /// The panel is always somewhere the run goes: the rocket is the whole of
+    /// it, and every room of the rocket is on the crossing.
     #[test]
-    fn the_ascent_carries_no_panel() {
-        assert!(Level::Ascent.rooms().is_empty());
+    fn the_panel_is_always_in_a_room_of_the_run() {
+        for seed in 0..256u64 {
+            let panel = Panel::from_seed(seed);
+
+            assert!(
+                Level::Rocket.rooms().contains(&panel.room),
+                "seed {seed} put the panel outside the rocket"
+            );
+        }
     }
 
     /// The panel as it is actually worked: a real player entity walked from one

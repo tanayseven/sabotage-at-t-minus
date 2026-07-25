@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
-use crate::level::{Level, PendingLevelAdvance};
-use crate::state::{GameState, PlayingState};
+use crate::state::GameState;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
@@ -16,17 +15,9 @@ pub struct MissionCompleteScreen;
 #[derive(Component)]
 pub struct MissionCompleteButton;
 
-pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
-    let button_label = if level.next().is_some() {
-        "Next Level"
-    } else {
-        "Back to Menu"
-    };
-    let message = if level.next().is_some() {
-        "All clear - ready for the next room.\nPress Space to continue."
-    } else {
-        "Congratulations! You can safely fly off now.\nPress Space to continue."
-    };
+pub fn spawn_mission_complete(mut commands: Commands) {
+    let button_label = "Back to Menu";
+    let message = "Congratulations! You can safely fly off now.\nPress Space to continue.";
 
     commands
         .spawn((
@@ -94,10 +85,7 @@ pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
 #[allow(clippy::type_complexity)]
 pub fn mission_complete_action(
     buttons: Query<&Interaction, (Changed<Interaction>, With<MissionCompleteButton>)>,
-    level: Res<Level>,
-    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
-    mut next_playing: ResMut<NextState<PlayingState>>,
     mut next_game: ResMut<NextState<GameState>>,
 ) {
     let clicked = buttons
@@ -109,12 +97,7 @@ pub fn mission_complete_action(
         || keys.just_pressed(KeyCode::Escape)
         || keys.just_pressed(KeyCode::Space)
     {
-        if let Some(next_level) = level.next() {
-            commands.insert_resource(PendingLevelAdvance(next_level));
-            next_playing.set(PlayingState::Running);
-        } else {
-            next_game.set(GameState::Menu);
-        }
+        next_game.set(GameState::Menu);
     }
 }
 

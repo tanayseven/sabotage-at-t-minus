@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::countdown::MissionTimer;
 use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
-use crate::level::{Level, LevelEntity, LevelProgress, PendingLevelAdvance};
+use crate::level::{Level, LevelEntity, LevelProgress};
 use crate::manual::ManualPage;
 use crate::panel::{Panel, spawn_panel};
 use crate::platform::spawn_platforms;
@@ -87,32 +87,8 @@ pub fn build_level(
     );
     spawn_panel(commands, &run.panel, level, LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
-    spawn_portals(commands, images, level, run.puzzles, LevelEntity);
+    spawn_portals(commands, images, run.puzzles, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
-}
-
-pub fn apply_pending_level_transition(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    pending: Option<Res<PendingLevelAdvance>>,
-    hud: Query<Entity, With<GameEntity>>,
-    level_entities: Query<Entity, With<LevelEntity>>,
-    time: Res<Time>,
-) {
-    let Some(pending) = pending else {
-        return;
-    };
-
-    for entity in hud.iter().chain(&level_entities) {
-        commands.entity(entity).despawn();
-    }
-
-    commands.insert_resource(pending.0);
-    let run = reset_run_state(&mut commands, pending.0, &time);
-    build_level(&mut commands, &assets, &mut images, pending.0, run);
-    spawn_hud(&mut commands, pending.0, &run.panel, &run.progress);
-    commands.remove_resource::<PendingLevelAdvance>();
 }
 
 pub fn despawn_game(

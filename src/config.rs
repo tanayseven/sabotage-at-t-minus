@@ -52,12 +52,8 @@ pub const URGENT_SECONDS: f32 = 10.0;
 pub const WALL_THICKNESS: f32 = 40.0;
 pub const PLATFORM_HEIGHT: f32 = 32.0;
 
-/// How far the camera zooms in on levels that track the player. Those levels
-/// are wider than the viewport, so the whole thing was never going to fit.
-pub const FOLLOW_ZOOM: f32 = 2.0;
-/// How far the camera zooms in inside the rocket. Gentler than [`FOLLOW_ZOOM`]:
-/// the decks are stacked close together, and pulling back this far is what keeps
-/// the deck above and the one below in frame while the player crosses a room.
+/// How far the camera zooms in inside the rocket. Gentle enough to keep the
+/// deck above and the one below in frame while the player crosses a room.
 pub const INTERIOR_ZOOM: f32 = 1.4;
 /// Exponential decay rate for the tracking camera, per second. High enough to
 /// stay glued to a sprint, low enough to smooth out landings.
