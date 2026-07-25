@@ -52,7 +52,7 @@ use crate::options::{
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
-use crate::portal::{enter_portal, reset_portal};
+use crate::portal::{enter_portal, pulse_portal, reset_portal};
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
@@ -167,6 +167,7 @@ fn main() {
             Update,
             tick_countdown.run_if(in_state(PlayingState::Running)),
         )
+        .add_systems(Update, pulse_portal.run_if(in_state(PlayingState::Running)))
         .add_systems(Update, enter_portal.run_if(in_state(PlayingState::Running)))
         .add_systems(
             Update,
