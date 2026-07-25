@@ -18,6 +18,7 @@
 use bevy::prelude::*;
 use bevy::text::{LineBreak, LineHeight};
 
+use crate::panel::Panel;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
 /// Not quite opaque: enough of the level shows through to keep the reader in
@@ -68,10 +69,18 @@ struct Page {
     lines: &'static [&'static str],
 }
 
+/// Stands in for the line the isolation panel's setting is printed on. The
+/// pages are constants and that one line is not — it is decided when the run
+/// starts — so it is left as a slot and filled in as the page is drawn.
+///
+/// A whole line rather than a hole in the middle of one, so the substitution
+/// cannot push a line of prose out past the width the page is set to.
+const SWITCH_SETTINGS: &str = "\u{0}settings";
+
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 5] = [
+const PAGES: [Page; 6] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -82,6 +91,19 @@ const PAGES: [Page; 5] = [
             "",
             "Turn pages with the arrow keys. Esc puts the manual away.",
             "The clock does not stop while you have your nose in it.",
+        ],
+    },
+    Page {
+        heading: "Isolation Panel",
+        lines: &[
+            "One room's isolation panel was thrown out of true. Which room",
+            "changes with the shift roster — the readout under the clock",
+            "names it. Stand at a switch and press E to throw it.",
+            "",
+            "Left to right, this shift's panel is to be left set:",
+            SWITCH_SETTINGS,
+            "",
+            "The three lamps are wired to the set: they come up together.",
         ],
     },
     Page {
@@ -152,7 +174,7 @@ pub struct ManualHeading;
 #[derive(Component)]
 pub struct ManualBody;
 
-/// The `Page 2 / 5` readout between the two nav buttons.
+/// The `Page 2 / 6` readout between the two nav buttons.
 #[derive(Component)]
 pub struct ManualIndicator;
 
@@ -193,7 +215,9 @@ pub fn reset_manual_page(mut commands: Commands) {
     commands.insert_resource(ManualPage::default());
 }
 
-fn spawn_manual(commands: &mut Commands, open: ManualPage) {
+/// `switch_panel` is the isolation panel out in the level, not this one — the
+/// manual has a panel of its own, and one of the two had to give way.
+fn spawn_manual(commands: &mut Commands, open: ManualPage, switch_panel: &Panel) {
     commands
         .spawn((
             ManualScreen,
@@ -258,7 +282,7 @@ fn spawn_manual(commands: &mut Commands, open: ManualPage) {
                             ));
                             body.spawn((
                                 ManualBody,
-                                Text::new(body_text(open)),
+                                Text::new(body_text(open, switch_panel)),
                                 TextFont {
                                     font_size: FontSize::Px(BODY_FONT),
                                     ..default()
@@ -326,8 +350,21 @@ fn spawn_manual(commands: &mut Commands, open: ManualPage) {
         });
 }
 
-fn body_text(page: ManualPage) -> String {
-    page.page().lines.join("\n")
+/// The open page's body, with the panel's setting printed onto the line the
+/// page leaves for it.
+fn body_text(page: ManualPage, panel: &Panel) -> String {
+    page.page()
+        .lines
+        .iter()
+        .map(|line| {
+            if *line == SWITCH_SETTINGS {
+                panel.printed_settings()
+            } else {
+                (*line).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Opening, closing and paging, in one system because they share a keyboard:
@@ -343,6 +380,7 @@ pub fn manual_controls(
     mut commands: Commands,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut page: ResMut<ManualPage>,
+    panel: Res<Panel>,
     open_buttons: Query<&Interaction, (Changed<Interaction>, With<ManualButton>)>,
     nav_buttons: Query<(&Interaction, &ManualNav), Changed<Interaction>>,
     screen: Query<Entity, With<ManualScreen>>,
@@ -354,7 +392,7 @@ pub fn manual_controls(
 
     let Ok(open) = screen.single() else {
         if toggled {
-            spawn_manual(&mut commands, *page);
+            spawn_manual(&mut commands, *page, &panel);
         }
         return;
     };
@@ -393,13 +431,16 @@ pub fn manual_controls(
 #[allow(clippy::type_complexity)]
 pub fn sync_manual_page(
     page: Res<ManualPage>,
+    panel: Res<Panel>,
     mut texts: ParamSet<(
         Query<&mut Text, With<ManualHeading>>,
         Query<&mut Text, With<ManualBody>>,
         Query<&mut Text, With<ManualIndicator>>,
     )>,
 ) {
-    if !page.is_changed() {
+    // The panel is watched as well as the page: a new run inserts a new one,
+    // and the line it prints has to follow it.
+    if !page.is_changed() && !panel.is_changed() {
         return;
     }
 
@@ -407,7 +448,7 @@ pub fn sync_manual_page(
         **text = page.page().heading.to_string();
     }
     for mut text in &mut texts.p1() {
-        **text = body_text(*page);
+        **text = body_text(*page, &panel);
     }
     for mut text in &mut texts.p2() {
         **text = page.label();
@@ -429,9 +470,10 @@ mod tests {
 
     use super::{
         MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES,
-        manual_controls,
+        SWITCH_SETTINGS, body_text, manual_controls,
     };
     use crate::config::DESIGN_HEIGHT;
+    use crate::panel::Panel;
 
     /// The manual's controls, and nothing else — enough to open and close it
     /// with the keyboard and see what that left behind.
@@ -439,6 +481,7 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ManualPage>()
+            .init_resource::<Panel>()
             .add_systems(Update, manual_controls);
         app
     }
@@ -590,6 +633,67 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The one line of the manual that is not written until the run starts. It
+    /// still has to fit the box the rest of the page was measured for, whichever
+    /// setting the run asks for.
+    #[test]
+    fn the_setting_printed_for_the_run_fits_the_page() {
+        for seed in 0..64u64 {
+            let printed = Panel::from_seed(seed).printed_settings();
+
+            assert!(
+                printed.chars().count() <= MAX_LINE_CHARS,
+                "the printed setting is too wide for the page: {printed:?}"
+            );
+        }
+    }
+
+    /// The point of the page: the manual tells the player what to throw. A page
+    /// that still had the slot on it would be one that told them nothing.
+    #[test]
+    fn the_manual_prints_this_run_s_combination() {
+        let panel = Panel::from_seed(11);
+        let page = (0..PAGES.len())
+            .map(|index| {
+                let mut page = ManualPage::default();
+                page.turn(index as isize);
+                page
+            })
+            .find(|page| page.page().heading == "Isolation Panel")
+            .expect("the manual has no isolation panel page");
+
+        let body = body_text(page, &panel);
+
+        assert!(
+            !body.contains(SWITCH_SETTINGS),
+            "the page went out with the slot still on it"
+        );
+        assert!(
+            body.contains(&panel.printed_settings()),
+            "the page does not print the run's setting"
+        );
+        for (index, up) in panel.combination.iter().enumerate() {
+            let printed = format!("{}: {}", index + 1, if *up { "UP" } else { "DOWN" });
+
+            assert!(body.contains(&printed), "switch {index} is not printed");
+        }
+    }
+
+    /// Every other page is printed as written, slot or no slot.
+    #[test]
+    fn the_pages_without_a_setting_are_printed_as_written() {
+        let panel = Panel::from_seed(11);
+        let mut page = ManualPage::default();
+
+        assert_eq!(body_text(page, &panel), PAGES[0].lines.join("\n"));
+
+        page.turn(PAGES.len() as isize);
+        assert_eq!(
+            body_text(page, &panel),
+            PAGES[PAGES.len() - 1].lines.join("\n")
+        );
     }
 
     /// The manual is read with the run still going on around it, so it has to

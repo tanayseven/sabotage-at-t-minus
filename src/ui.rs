@@ -4,6 +4,7 @@ use bevy::window::PrimaryWindow;
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::countdown::spawn_countdown;
 use crate::manual::ManualButton;
+use crate::panel::{Panel, spawn_panel_status};
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
@@ -21,6 +22,7 @@ const HUD_BUTTON_SIZE: Vec2 = Vec2::new(120.0, 44.0);
 const HUD_BUTTON_FONT: f32 = 22.0;
 const HUD_BUTTON_GAP: f32 = 12.0;
 const HUD_COUNTDOWN_FONT: f32 = 56.0;
+const HUD_STATUS_FONT: f32 = 20.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
 const BACK_BUTTON_FONT: f32 = 24.0;
@@ -88,11 +90,11 @@ pub fn button_visuals(
     }
 }
 
-pub fn spawn_hud(commands: &mut Commands) {
+pub fn spawn_hud(commands: &mut Commands, panel: &Panel) {
     commands.spawn((
         GameEntity,
         Text::new(
-            "Sabotage at T-Minus\nA/D to move, W / space to jump, W/S on a ladder\nE to work a door — M for the repair manual",
+            "Sabotage at T-Minus\nA/D to move, W / space to jump, W/S on a ladder\nE to work a door or throw a switch — M for the repair manual",
         ),
         Node {
             position_type: PositionType::Absolute,
@@ -113,6 +115,8 @@ pub fn spawn_hud(commands: &mut Commands) {
                 position_type: PositionType::Absolute,
                 top: px(16),
                 width: percent(100),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
@@ -120,6 +124,10 @@ pub fn spawn_hud(commands: &mut Commands) {
         ))
         .with_children(|parent| {
             spawn_countdown(parent, HUD_COUNTDOWN_FONT);
+            // Under the clock, because it is read the same way: a glance, not a
+            // look. It names the room the panel is in — finding it is not the
+            // puzzle, and the clock is short.
+            spawn_panel_status(parent, panel, HUD_STATUS_FONT);
         });
 
     commands
