@@ -2,7 +2,9 @@ mod camera;
 mod config;
 mod countdown;
 mod credits;
+mod door;
 mod gameover;
+mod ladder;
 mod launchpad;
 mod level;
 mod manual;
@@ -34,7 +36,9 @@ use crate::camera::{apply_level_camera, follow_player, reset_camera, setup_camer
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
+use crate::door::{leave_through_airlock, use_doors};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
+use crate::ladder::climb_ladder;
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
 use crate::level::{Level, react_to_minigame_result, reset_level};
 use crate::manual::{
@@ -129,13 +133,30 @@ fn main() {
         // The character is driven the same way on the launch pad as in the
         // level, so this is registered once for both rather than twice. Chained
         // because each step reads what the one before it wrote: the ray probe
-        // needs this frame's movement, jumping needs the probe, and the
-        // animation needs all three to pick a pose.
+        // needs this frame's movement, the climb needs the probe, jumping needs
+        // to know the climb has not already taken the W it is looking at, and
+        // the animation needs all four to pick a pose. The launch pad has no
+        // ladders on it, so the climb simply finds nothing to take hold of.
         .add_systems(
             Update,
-            (move_player, probe_ground, jump, animate_player)
+            (
+                move_player,
+                probe_ground,
+                climb_ladder,
+                jump,
+                animate_player,
+            )
                 .chain()
                 .run_if(in_state(GameState::Launchpad).or_else(in_state(PlayingState::Running))),
+        )
+        // Working a door and stepping through it are two presses apart, but the
+        // second can land on the frame the first opens the airlock, so they are
+        // chained in that order rather than racing.
+        .add_systems(
+            Update,
+            (use_doors, leave_through_airlock)
+                .chain()
+                .run_if(in_state(PlayingState::Running)),
         )
         // Chained, and in this order, for two reasons: a page turned this frame
         // should be on screen this frame rather than a frame behind the press,

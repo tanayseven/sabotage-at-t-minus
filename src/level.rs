@@ -1,31 +1,35 @@
-//! The level a run is made of, and what makes it what it is.
+//! The levels a run is made of, and what makes each one different.
 //!
-//! Boarding the rocket drops the player straight into the ascent: open ground
-//! with no walls at all, framed by a camera zoomed in on the player that pans
-//! along as they move. The mission clock runs for as long as the run does.
+//! A run starts inside the rocket. Leaving through the airlock transitions to
+//! the ascent, and then to the upper deck through the portal/minigame flow.
 
 use bevy::prelude::*;
 
-use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, PLATFORM_HEIGHT};
+use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
+use crate::door::Door;
+use crate::ladder::{LADDER_CLEARANCE, Ladder};
 use crate::minigames::{CompletedMinigame, MinigameConfig, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
 use crate::state::PlayingState;
+use crate::wall::Wall;
 
-/// Marks the level geometry: platforms, crates and the player. Cleared when the
-/// run ends, which is what separates it from the HUD's
+/// Marks the level geometry: walls, platforms, ladders, doors, crates and the
+/// player. Cleared both when the run ends and when it moves on to the next
+/// level, which is what separates it from the HUD's
 /// [`crate::setup::GameEntity`].
 #[derive(Component, Clone)]
 pub struct LevelEntity;
 
-/// Which scene the current run is in. There are two for now, but the camera and
-/// the geometry are still asked for through it, so adding another is a matter of
-/// adding a variant rather than unpicking the systems.
+/// Which scene the current run is in. Levels run in the order below, and the
+/// mission clock spans the whole run.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
-    /// Open ground. No walls, and the camera zooms in and tracks the player
-    /// instead of keeping the level still.
+    /// Where the run starts: rooms inside the rocket.
     #[default]
+    Rocket,
+    /// Open ground outside the rocket.
     Ascent,
+    /// The third stage reached after clearing the ascent's portal challenge.
     UpperDeck,
 }
 
@@ -49,25 +53,121 @@ impl CameraMode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct LevelConfig {
     pub platforms: &'static [Platform],
+    pub walls: &'static [Wall],
+    pub ladders: &'static [Ladder],
+    pub doors: &'static [Door],
     pub crates: &'static [Vec2],
     pub player_spawn: Vec2,
     pub camera: CameraMode,
-    pub minigame: MinigameConfig,
+    pub minigame: Option<MinigameConfig>,
     pub portal_ahead: f32,
     pub portal_up: f32,
     pub portal_camera_inset: f32,
 }
 
-/// Top of the level ground.
+/// Top of the floor, shared by the rocket's bottom deck and the outside ground.
 const GROUND_TOP: f32 = -DESIGN_HEIGHT / 2.0;
+const FOLLOW_BOUNDS: Rect = Rect::new(
+    -2100.0,
+    GROUND_TOP - PLATFORM_HEIGHT,
+    2100.0,
+    GROUND_TOP + 1400.0,
+);
 
-/// Shared camera bounds for the player-following levels.
-const FOLLOW_BOUNDS: Rect = Rect::new(-2100.0, GROUND_TOP - PLATFORM_HEIGHT, 2100.0, GROUND_TOP + 1400.0);
+// ---------------------------------------------------------------------------
+// Rocket level
+// ---------------------------------------------------------------------------
 
-/// The original ascent layout, kept exactly as it was before the cleanup.
+const HULL_LEFT: f32 = -600.0;
+const HULL_RIGHT: f32 = 600.0;
+const BULKHEAD_X: f32 = 0.0;
+
+const DECK_HEIGHT: f32 = 260.0;
+const DECK_0: f32 = GROUND_TOP;
+const DECK_1: f32 = DECK_0 + DECK_HEIGHT;
+const DECK_2: f32 = DECK_1 + DECK_HEIGHT;
+const ROCKET_CEILING: f32 = DECK_2 + DECK_HEIGHT;
+
+const LOWER_LADDER_X: f32 = 400.0;
+const UPPER_LADDER_X: f32 = -400.0;
+const LADDER_GAP: f32 = LADDER_CLEARANCE;
+const AIRLOCK_X: f32 = HULL_RIGHT - WALL_THICKNESS / 2.0;
+
+const fn plate(from: f32, to: f32, top: f32) -> Platform {
+    Platform::with_top((from + to) / 2.0, top, to - from)
+}
+
+const ROCKET_PLATFORMS: [Platform; 6] = [
+    plate(HULL_LEFT, HULL_RIGHT, DECK_0),
+    plate(HULL_LEFT, LOWER_LADDER_X - LADDER_GAP / 2.0, DECK_1),
+    plate(LOWER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_1),
+    plate(HULL_LEFT, UPPER_LADDER_X - LADDER_GAP / 2.0, DECK_2),
+    plate(UPPER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_2),
+    plate(HULL_LEFT, HULL_RIGHT, ROCKET_CEILING),
+];
+
+const DECK_0_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_0);
+const DECK_1_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_1);
+const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
+const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_2);
+
+const ROCKET_DOORS: [Door; 4] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, AIRLOCK];
+
+const ROCKET_WALLS: [Wall; 5] = [
+    Wall::between(HULL_LEFT, DECK_0, ROCKET_CEILING),
+    Wall::between(HULL_RIGHT, DECK_0, ROCKET_CEILING),
+    Wall::between(BULKHEAD_X, DECK_0_DOOR.lintel(), DECK_1 - PLATFORM_HEIGHT),
+    Wall::between(BULKHEAD_X, DECK_1_DOOR.lintel(), DECK_2 - PLATFORM_HEIGHT),
+    Wall::between(
+        BULKHEAD_X,
+        DECK_2_DOOR.lintel(),
+        ROCKET_CEILING - PLATFORM_HEIGHT,
+    ),
+];
+
+const ROCKET_LADDERS: [Ladder; 2] = [
+    Ladder::new(LOWER_LADDER_X, DECK_0, DECK_1),
+    Ladder::new(UPPER_LADDER_X, DECK_1, DECK_2),
+];
+
+const ROCKET_CRATES: [Vec2; 4] = [
+    Vec2::new(-300.0, DECK_0 + 140.0),
+    Vec2::new(200.0, DECK_1 + 140.0),
+    Vec2::new(-180.0, DECK_2 + 140.0),
+    Vec2::new(-520.0, DECK_2 + 140.0),
+];
+
+const ROCKET_SPAWN: Vec2 = Vec2::new(HULL_LEFT + 120.0, DECK_0 + 60.0);
+
+const ROCKET_CONFIG: LevelConfig = LevelConfig {
+    platforms: &ROCKET_PLATFORMS,
+    walls: &ROCKET_WALLS,
+    ladders: &ROCKET_LADDERS,
+    doors: &ROCKET_DOORS,
+    crates: &ROCKET_CRATES,
+    player_spawn: ROCKET_SPAWN,
+    camera: CameraMode::Follow {
+        zoom: INTERIOR_ZOOM,
+        bounds: Rect::new(
+            HULL_LEFT - WALL_THICKNESS,
+            DECK_0 - PLATFORM_HEIGHT,
+            HULL_RIGHT + WALL_THICKNESS,
+            ROCKET_CEILING,
+        ),
+    },
+    minigame: None,
+    portal_ahead: 0.0,
+    portal_up: 0.0,
+    portal_camera_inset: 0.0,
+};
+
+// ---------------------------------------------------------------------------
+// Ascent level
+// ---------------------------------------------------------------------------
+
 const ASCENT_PLATFORMS: [Platform; 13] = [
     Platform::with_top(0.0, GROUND_TOP, 4600.0),
     Platform::with_top(-1600.0, GROUND_TOP + 180.0, 330.0),
@@ -92,24 +192,34 @@ const ASCENT_CRATES: [Vec2; 5] = [
     Vec2::new(1740.0, GROUND_TOP + 860.0),
 ];
 
+const EMPTY_WALLS: [Wall; 0] = [];
+const EMPTY_LADDERS: [Ladder; 0] = [];
+const EMPTY_DOORS: [Door; 0] = [];
+
 const ASCENT_CONFIG: LevelConfig = LevelConfig {
     platforms: &ASCENT_PLATFORMS,
+    walls: &EMPTY_WALLS,
+    ladders: &EMPTY_LADDERS,
+    doors: &EMPTY_DOORS,
     crates: &ASCENT_CRATES,
     player_spawn: Vec2::new(-2050.0, GROUND_TOP + 60.0),
     camera: CameraMode::Follow {
         zoom: FOLLOW_ZOOM,
         bounds: FOLLOW_BOUNDS,
     },
-    minigame: MinigameConfig {
+    minigame: Some(MinigameConfig {
         id: MinigameId::TapChallenge,
         time_limit_seconds: 8.0,
-    },
+    }),
     portal_ahead: 110.0,
     portal_up: 48.0,
     portal_camera_inset: 20.0,
 };
 
-/// The second level keeps the same flow, but with a different climb rhythm.
+// ---------------------------------------------------------------------------
+// Upper deck level
+// ---------------------------------------------------------------------------
+
 const UPPER_DECK_PLATFORMS: [Platform; 13] = [
     Platform::with_top(0.0, GROUND_TOP, 4600.0),
     Platform::with_top(-1480.0, GROUND_TOP + 220.0, 250.0),
@@ -136,16 +246,19 @@ const UPPER_DECK_CRATES: [Vec2; 5] = [
 
 const UPPER_DECK_CONFIG: LevelConfig = LevelConfig {
     platforms: &UPPER_DECK_PLATFORMS,
+    walls: &EMPTY_WALLS,
+    ladders: &EMPTY_LADDERS,
+    doors: &EMPTY_DOORS,
     crates: &UPPER_DECK_CRATES,
     player_spawn: Vec2::new(-2000.0, GROUND_TOP + 60.0),
     camera: CameraMode::Follow {
         zoom: FOLLOW_ZOOM,
         bounds: FOLLOW_BOUNDS,
     },
-    minigame: MinigameConfig {
+    minigame: Some(MinigameConfig {
         id: MinigameId::TapChallenge,
         time_limit_seconds: 8.0,
-    },
+    }),
     portal_ahead: 110.0,
     portal_up: 48.0,
     portal_camera_inset: 20.0,
@@ -154,13 +267,34 @@ const UPPER_DECK_CONFIG: LevelConfig = LevelConfig {
 impl Level {
     pub fn config(self) -> LevelConfig {
         match self {
+            Level::Rocket => ROCKET_CONFIG,
             Level::Ascent => ASCENT_CONFIG,
             Level::UpperDeck => UPPER_DECK_CONFIG,
         }
     }
 
+    pub fn next(self) -> Option<Self> {
+        match self {
+            Level::Rocket => Some(Level::Ascent),
+            Level::Ascent => Some(Level::UpperDeck),
+            Level::UpperDeck => None,
+        }
+    }
+
     pub fn platforms(self) -> &'static [Platform] {
         self.config().platforms
+    }
+
+    pub fn walls(self) -> &'static [Wall] {
+        self.config().walls
+    }
+
+    pub fn ladders(self) -> &'static [Ladder] {
+        self.config().ladders
+    }
+
+    pub fn doors(self) -> &'static [Door] {
+        self.config().doors
     }
 
     pub fn crates(self) -> &'static [Vec2] {
@@ -171,27 +305,25 @@ impl Level {
         self.config().player_spawn
     }
 
-    pub fn minigame(self) -> MinigameConfig {
+    pub fn minigame(self) -> Option<MinigameConfig> {
         self.config().minigame
     }
 
-    pub fn portal_anchor(self) -> Vec2 {
+    pub fn portal_anchor(self) -> Option<Vec2> {
         let config = self.config();
+        config.minigame?;
+
         let last = &config.platforms[config.platforms.len() - 1];
         let desired_x = last.centre.x + last.width / 2.0 + config.portal_ahead;
         let visible_limit_x = 2100.0 - config.portal_camera_inset;
-        Vec2::new(desired_x.min(visible_limit_x), last.top() + config.portal_up)
+        Some(Vec2::new(
+            desired_x.min(visible_limit_x),
+            last.top() + config.portal_up,
+        ))
     }
 
     pub fn camera(self) -> CameraMode {
         self.config().camera
-    }
-
-    pub fn next(self) -> Option<Self> {
-        match self {
-            Level::Ascent => Some(Level::UpperDeck),
-            Level::UpperDeck => None,
-        }
     }
 }
 
@@ -201,8 +333,8 @@ pub fn reset_level(mut commands: Commands) {
     commands.insert_resource(Level::default());
 }
 
-/// Marks a queued level transition that should be applied when gameplay
-/// returns to the running state.
+/// Marks a queued level transition that should be applied when gameplay returns
+/// to the running state.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct PendingLevelAdvance(pub Level);
 
@@ -236,35 +368,41 @@ mod tests {
     use crate::config::PLAYER_HEIGHT;
 
     #[test]
-    fn a_run_opens_on_the_ascent() {
-        assert_eq!(Level::default(), Level::Ascent);
+    fn a_run_opens_inside_the_rocket() {
+        assert_eq!(Level::default(), Level::Rocket);
     }
 
     #[test]
-    fn the_levels_chain_in_order() {
+    fn levels_chain_in_order() {
+        assert_eq!(Level::Rocket.next(), Some(Level::Ascent));
         assert_eq!(Level::Ascent.next(), Some(Level::UpperDeck));
         assert_eq!(Level::UpperDeck.next(), None);
     }
 
     #[test]
-    fn the_ascent_tracks_the_player() {
-        assert!(matches!(
-            Level::Ascent.camera(),
-            CameraMode::Follow { zoom, .. } if zoom > 1.0
-        ));
+    fn only_rocket_has_structural_geometry() {
+        assert!(!Level::Rocket.walls().is_empty());
+        assert!(!Level::Rocket.ladders().is_empty());
+        assert!(!Level::Rocket.doors().is_empty());
+
+        assert!(Level::Ascent.walls().is_empty());
+        assert!(Level::Ascent.ladders().is_empty());
+        assert!(Level::Ascent.doors().is_empty());
     }
 
     #[test]
-    fn the_player_spawns_inside_the_camera_bounds() {
-        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
-            panic!("the ascent is meant to use a following camera");
-        };
+    fn ascent_and_upper_deck_have_portal_minigames() {
+        assert!(Level::Rocket.portal_anchor().is_none());
+        assert!(Level::Rocket.minigame().is_none());
 
-        assert!(bounds.contains(Level::Ascent.player_spawn()));
+        assert!(Level::Ascent.portal_anchor().is_some());
+        assert!(Level::Ascent.minigame().is_some());
+        assert!(Level::UpperDeck.portal_anchor().is_some());
+        assert!(Level::UpperDeck.minigame().is_some());
     }
 
     #[test]
-    fn the_second_level_has_its_own_layout() {
+    fn second_level_has_distinct_layout_data() {
         let ascent = Level::Ascent.config();
         let upper = Level::UpperDeck.config();
 
@@ -274,13 +412,19 @@ mod tests {
     }
 
     #[test]
-    fn the_second_level_spawns_within_camera_bounds() {
-        let CameraMode::Follow { bounds, .. } = Level::UpperDeck.camera() else {
-            panic!("the upper deck is meant to use a following camera");
-        };
+    fn every_level_spawns_inside_camera_bounds() {
+        for level in [Level::Rocket, Level::Ascent, Level::UpperDeck] {
+            let CameraMode::Follow { bounds, .. } = level.camera() else {
+                panic!("{level:?} is meant to use a following camera");
+            };
 
-        assert!(bounds.contains(Level::UpperDeck.player_spawn()));
+            assert!(bounds.contains(level.player_spawn()));
+        }
+    }
+
+    #[test]
+    fn upper_deck_spawn_stays_on_the_left_side() {
         assert!(Level::UpperDeck.player_spawn().x < 0.0);
-        assert!(Level::UpperDeck.player_spawn().y < 0.0 + PLAYER_HEIGHT);
+        assert!(Level::UpperDeck.player_spawn().y < PLAYER_HEIGHT);
     }
 }

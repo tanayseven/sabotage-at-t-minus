@@ -91,7 +91,9 @@ pub fn button_visuals(
 pub fn spawn_hud(commands: &mut Commands) {
     commands.spawn((
         GameEntity,
-        Text::new("Sabotage at T-Minus\nA/D to move, W / space to jump\nM for the repair manual"),
+        Text::new(
+            "Sabotage at T-Minus\nA/D to move, W / space to jump, W/S on a ladder\nE to work a door — M for the repair manual",
+        ),
         Node {
             position_type: PositionType::Absolute,
             top: px(16),
