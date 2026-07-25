@@ -36,9 +36,10 @@ pub fn spawn_portals(
     }
 
     let texture = red_circle_texture(images);
+    let start_index = random_index(minigames.len());
 
-    for position in positions {
-        let minigame = choose_portal_minigame(minigames).unwrap();
+    for (index, position) in positions.iter().enumerate() {
+        let minigame = minigames[(start_index + index) % minigames.len()];
 
         commands.spawn((
             marker.clone(),
@@ -90,15 +91,15 @@ pub fn enter_portal(
     next_playing.set(PlayingState::Minigame);
 }
 
-pub fn choose_portal_minigame(minigames: &[crate::minigames::MinigameId]) -> Option<crate::minigames::MinigameId> {
-    if minigames.is_empty() {
-        None
-    } else {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |duration| duration.as_nanos() as usize);
-        Some(minigames[nanos % minigames.len()])
+fn random_index(len: usize) -> usize {
+    if len == 0 {
+        return 0;
     }
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos() as usize);
+    nanos % len
 }
 
 pub fn pulse_portal(time: Res<Time>, mut portals: Query<&mut Transform, With<PortalPulse>>) {
