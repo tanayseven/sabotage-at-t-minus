@@ -8,9 +8,15 @@ use crate::state::PlayingState;
 
 const PORTAL_RADIUS: f32 = 42.0;
 const PORTAL_TEXTURE_SIZE: u32 = 96;
+const PORTAL_PULSE_SPEED: f32 = 4.0;
+const PORTAL_PULSE_MIN_SCALE: f32 = 0.92;
+const PORTAL_PULSE_MAX_SCALE: f32 = 1.10;
 
 #[derive(Component, Clone)]
 pub struct Portal;
+
+#[derive(Component)]
+pub struct PortalPulse;
 
 #[derive(Resource, Default)]
 pub struct PortalState {
@@ -33,6 +39,7 @@ pub fn spawn_portal(
     commands.spawn((
         marker,
         Portal,
+        PortalPulse,
         Sprite {
             image: texture,
             custom_size: Some(Vec2::splat(PORTAL_RADIUS * 2.0)),
@@ -66,6 +73,16 @@ pub fn enter_portal(
         portal_state.used = true;
         queue_minigame(&mut commands, MinigameId::TapChallenge);
         next_playing.set(PlayingState::Minigame);
+    }
+}
+
+pub fn pulse_portal(time: Res<Time>, mut portals: Query<&mut Transform, With<PortalPulse>>) {
+    let phase = time.elapsed_secs() * PORTAL_PULSE_SPEED;
+    let pulse = phase.sin() * 0.5 + 0.5;
+    let scale = PORTAL_PULSE_MIN_SCALE + pulse * (PORTAL_PULSE_MAX_SCALE - PORTAL_PULSE_MIN_SCALE);
+
+    for mut transform in &mut portals {
+        transform.scale = Vec3::splat(scale);
     }
 }
 
