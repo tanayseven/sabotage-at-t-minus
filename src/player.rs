@@ -7,9 +7,9 @@ use crate::config::{
     PLAYER_WIDTH,
 };
 use crate::player_animation::PlayerAnimation;
-use crate::setup::GameEntity;
 
-const SPAWN_POSITION: Vec2 = Vec2::new(-380.0, 260.0);
+/// Where the player drops in at the start of a level run.
+pub const SPAWN_POSITION: Vec2 = Vec2::new(-380.0, 260.0);
 const GROUND_PROBE_LENGTH: f32 = PLAYER_HEIGHT / 2.0 + GROUND_PROBE;
 
 #[derive(Component)]
@@ -20,11 +20,18 @@ pub struct Player;
 #[derive(Component, Default)]
 pub struct Grounded(pub bool);
 
-pub fn spawn_player(commands: &mut Commands, assets: &AssetServer) {
+/// The same character is used on the launch pad and in the level, so the
+/// caller supplies both the drop point and the marker that owns the entity.
+pub fn spawn_player(
+    commands: &mut Commands,
+    assets: &AssetServer,
+    position: Vec2,
+    marker: impl Bundle,
+) {
     let animation = PlayerAnimation::load(assets);
 
     commands.spawn((
-        GameEntity,
+        marker,
         Player,
         Sprite {
             image: animation.frame(),
@@ -35,7 +42,7 @@ pub fn spawn_player(commands: &mut Commands, assets: &AssetServer) {
         // bottom of its collider rather than straddling the middle of it.
         Anchor(Vec2::new(0.0, PLAYER_ART_ANCHOR)),
         animation,
-        Transform::from_xyz(SPAWN_POSITION.x, SPAWN_POSITION.y, 0.0),
+        Transform::from_xyz(position.x, position.y, 0.0),
         RigidBody::Dynamic,
         Collider::cuboid(PLAYER_WIDTH / 2.0, PLAYER_HEIGHT / 2.0),
         LockedAxes::ROTATION_LOCKED,

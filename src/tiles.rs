@@ -3,8 +3,6 @@ use std::f32::consts::{FRAC_PI_2, PI};
 use bevy::image::{ImageLoaderSettings, ImageSampler};
 use bevy::prelude::*;
 
-use crate::setup::GameEntity;
-
 const CENTRE_TILE: &str = "walls/vertical-center.png";
 const CAP_TILE: &str = "walls/vertical-wall-bottom.png";
 
@@ -59,18 +57,21 @@ pub struct TileSet {
     cap: Handle<Image>,
 }
 
-pub fn load_tiles(assets: &AssetServer) -> TileSet {
-    let pixel_art = |settings: &mut ImageLoaderSettings| settings.sampler = ImageSampler::nearest();
+/// Loads an image with nearest-neighbour filtering, so the pixel art keeps its
+/// hard edges instead of being smeared by the default linear sampler.
+pub fn load_pixel_art(assets: &AssetServer, path: &'static str) -> Handle<Image> {
+    assets
+        .load_builder()
+        .with_settings(|settings: &mut ImageLoaderSettings| {
+            settings.sampler = ImageSampler::nearest()
+        })
+        .load(path)
+}
 
+pub fn load_tiles(assets: &AssetServer) -> TileSet {
     TileSet {
-        centre: assets
-            .load_builder()
-            .with_settings(pixel_art)
-            .load(CENTRE_TILE),
-        cap: assets
-            .load_builder()
-            .with_settings(pixel_art)
-            .load(CAP_TILE),
+        centre: load_pixel_art(assets, CENTRE_TILE),
+        cap: load_pixel_art(assets, CAP_TILE),
     }
 }
 
@@ -83,7 +84,10 @@ pub struct TileRun {
 }
 
 impl TileRun {
-    pub fn spawn(&self, commands: &mut Commands, tiles: &TileSet) {
+    /// `marker` is stamped on every tile so the caller's screen can despawn its
+    /// own scenery: gameplay tiles carry [`GameEntity`](crate::setup::GameEntity),
+    /// the launch pad's carry its own marker.
+    pub fn spawn(&self, commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
         let tile_count = (self.length / self.thickness).round().max(2.0);
         let tile_length = self.length / tile_count;
         let tile_count = tile_count as usize;
@@ -104,7 +108,7 @@ impl TileRun {
             };
 
             commands.spawn((
-                GameEntity,
+                marker.clone(),
                 Sprite {
                     image,
                     custom_size: Some(Vec2::new(self.thickness, tile_length)),

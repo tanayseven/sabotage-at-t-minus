@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, WALL_THICKNESS};
-use crate::setup::GameEntity;
 use crate::tiles::{Axis, TileRun, TileSet};
 
 const WALL_Z: f32 = -5.0;
@@ -14,11 +13,11 @@ struct Wall {
 }
 
 impl Wall {
-    fn spawn(&self, commands: &mut Commands, tiles: &TileSet) {
+    fn spawn(&self, commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
         let half_extents = self.axis.half_extents(self.length, WALL_THICKNESS);
 
         commands.spawn((
-            GameEntity,
+            marker.clone(),
             Transform::from_xyz(self.centre.x, self.centre.y, WALL_Z),
             RigidBody::Fixed,
             Collider::cuboid(half_extents.x, half_extents.y),
@@ -31,11 +30,13 @@ impl Wall {
             thickness: WALL_THICKNESS,
             z: WALL_Z,
         }
-        .spawn(commands, tiles);
+        .spawn(commands, tiles, marker);
     }
 }
 
-pub fn spawn_walls(commands: &mut Commands, tiles: &TileSet) {
+/// The box that frames the play area. Both the launch pad and the level proper
+/// are fought inside it, so the caller says which screen owns the walls.
+pub fn spawn_walls(commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
     let half_width = DESIGN_WIDTH / 2.0;
     let half_height = DESIGN_HEIGHT / 2.0;
     let half_thickness = WALL_THICKNESS / 2.0;
@@ -65,6 +66,6 @@ pub fn spawn_walls(commands: &mut Commands, tiles: &TileSet) {
     };
 
     for wall in [top, ground, left, right] {
-        wall.spawn(commands, tiles);
+        wall.spawn(commands, tiles, marker.clone());
     }
 }

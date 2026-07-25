@@ -92,7 +92,7 @@ pub fn menu_action(
     }
 
     match chosen {
-        Some(MenuButton::Play) => next_state.set(GameState::Playing),
+        Some(MenuButton::Play) => next_state.set(GameState::Launchpad),
         Some(MenuButton::Options) => next_state.set(GameState::Options),
         Some(MenuButton::Credits) => next_state.set(GameState::Credits),
         #[cfg(not(target_arch = "wasm32"))]

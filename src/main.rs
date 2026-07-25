@@ -3,6 +3,7 @@ mod config;
 mod countdown;
 mod credits;
 mod gameover;
+mod launchpad;
 mod menu;
 mod music;
 mod options;
@@ -29,6 +30,7 @@ use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
+use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
 use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
@@ -68,8 +70,8 @@ fn main() {
 
     app.init_state::<GameState>()
         .add_sub_state::<PlayingState>()
-        .init_resource::<MissionTimer>()
         .init_resource::<Settings>()
+        .init_resource::<MissionTimer>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
         .add_systems(
@@ -91,25 +93,36 @@ fn main() {
         .add_systems(OnEnter(GameState::Credits), spawn_credits)
         .add_systems(Update, back_to_menu.run_if(in_state(GameState::Credits)))
         .add_systems(OnExit(GameState::Credits), despawn_credits)
+        .add_systems(OnEnter(GameState::Launchpad), spawn_launchpad)
+        .add_systems(
+            Update,
+            (board_rocket, leave_launchpad).run_if(in_state(GameState::Launchpad)),
+        )
+        .add_systems(OnExit(GameState::Launchpad), despawn_launchpad)
         .add_systems(
             OnEnter(GameState::Playing),
             (setup, start_music, reset_mission_timer),
         )
+        // The character is driven the same way on the launch pad as in the
+        // level, so this is registered once for both rather than twice. Chained
+        // because each step reads what the one before it wrote: the ray probe
+        // needs this frame's movement, jumping needs the probe, and the
+        // animation needs all three to pick a pose.
         .add_systems(
             Update,
-            // Chained because each step reads what the one before it wrote:
-            // the ray probe needs this frame's movement, jumping needs the
-            // probe, and the animation needs all three to pick a pose.
-            (
-                move_player,
-                probe_ground,
-                jump,
-                animate_player,
-                open_quit_dialog,
-                tick_countdown,
-            )
+            (move_player, probe_ground, jump, animate_player)
                 .chain()
-                .run_if(in_state(PlayingState::Running)),
+                .run_if(in_state(GameState::Launchpad).or_else(in_state(PlayingState::Running))),
+        )
+        .add_systems(
+            Update,
+            open_quit_dialog.run_if(in_state(PlayingState::Running)),
+        )
+        // Independent of the movement chain: the clock runs regardless of what
+        // the player does this frame.
+        .add_systems(
+            Update,
+            tick_countdown.run_if(in_state(PlayingState::Running)),
         )
         .add_systems(OnExit(GameState::Playing), (despawn_game, stop_music))
         .add_systems(
