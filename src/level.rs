@@ -172,6 +172,103 @@ const ROCKET_CRATES: [Vec2; 4] = [
 const ROCKET_SPAWN: Vec2 = Vec2::new(HULL_LEFT + 120.0, DECK_0 + 60.0);
 
 // ---------------------------------------------------------------------------
+// The rooms themselves
+// ---------------------------------------------------------------------------
+
+/// Which side of the bulkhead a room is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Port,
+    Starboard,
+}
+
+impl Side {
+    const fn hull(self) -> f32 {
+        match self {
+            Side::Port => HULL_LEFT,
+            Side::Starboard => HULL_RIGHT,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Side::Port => "port",
+            Side::Starboard => "starboard",
+        }
+    }
+}
+
+/// How many decks the rocket has, and how many rooms the bulkhead cuts each of
+/// them into.
+const DECK_COUNT: usize = 3;
+const ROOMS_PER_DECK: usize = 2;
+/// Every room in the rocket, which is what anything picking one at random works
+/// against.
+pub const ROOM_COUNT: usize = DECK_COUNT * ROOMS_PER_DECK;
+
+/// One of the rocket's six rooms: the stretch of a deck on one side of the
+/// bulkhead. Described by which deck and which side rather than by its corners,
+/// because that is what a room *is* here — the plates, the hull and the
+/// bulkhead already say where the walls are, and a second copy of those numbers
+/// would only be one to keep in step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    /// 0 is the deck the player is dropped onto, 2 the one the airlock is on.
+    pub deck: usize,
+    pub side: Side,
+}
+
+/// How far along a room, from the bulkhead toward the hull, a fixture is
+/// mounted. Deliberately not the middle: a ladder comes up at 400 units out and
+/// a doorway is worked from as far as a crate's width back from the bulkhead,
+/// so the middle of the room is the one place a fixture would be in the way of
+/// both. `a_panel_is_clear_of_everything_else_in_its_room` holds this.
+const FIXTURE_ALONG_ROOM: f32 = 0.45;
+
+impl Room {
+    /// The `index`th room, counting up the rocket a deck at a time. What makes
+    /// a room pickable with a single number.
+    pub const fn from_index(index: usize) -> Self {
+        Self {
+            deck: index / ROOMS_PER_DECK,
+            side: if index.is_multiple_of(ROOMS_PER_DECK) {
+                Side::Port
+            } else {
+                Side::Starboard
+            },
+        }
+    }
+
+    /// The deck plate the room is floored with — the surface walked on.
+    pub const fn floor(self) -> f32 {
+        DECK_0 + self.deck as f32 * DECK_HEIGHT
+    }
+
+    /// Where a wall fixture is mounted in this room, given as the point on the
+    /// floor it stands on, so what is hung there decides its own height.
+    pub const fn fixture(self) -> Vec2 {
+        Vec2::new(
+            BULKHEAD_X + (self.side.hull() - BULKHEAD_X) * FIXTURE_ALONG_ROOM,
+            self.floor(),
+        )
+    }
+
+    /// How the room is named in anything the player reads.
+    pub fn label(self) -> String {
+        format!("deck {}, {}", self.deck, self.side.name())
+    }
+}
+
+const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
+    Room::from_index(0),
+    Room::from_index(1),
+    Room::from_index(2),
+    Room::from_index(3),
+    Room::from_index(4),
+    Room::from_index(5),
+];
+
+// ---------------------------------------------------------------------------
 // The ascent
 // ---------------------------------------------------------------------------
 
@@ -292,6 +389,15 @@ impl Level {
     pub fn doors(self) -> &'static [Door] {
         match self {
             Level::Rocket => &ROCKET_DOORS,
+            Level::Ascent => &[],
+        }
+    }
+
+    /// The rooms the level is divided into. Only the rocket has any: the ascent
+    /// is open ground, with nothing to be inside of.
+    pub fn rooms(self) -> &'static [Room] {
+        match self {
+            Level::Rocket => &ROCKET_ROOMS,
             Level::Ascent => &[],
         }
     }
@@ -592,6 +698,7 @@ mod tests {
         use crate::config::PIXELS_PER_METER;
         use crate::door::{leave_through_airlock, use_doors};
         use crate::ladder::climb_ladder;
+        use crate::panel::Panel;
         use crate::physics::configure_physics;
         use crate::player::{Player, jump, move_player, probe_ground};
         use crate::setup::build_level;
@@ -635,10 +742,14 @@ mod tests {
                 app.init_asset::<Image>();
                 app.init_resource::<Level>();
                 app.add_systems(Startup, configure_physics);
+                // The panel is built along with the rest of it, and pinned to a
+                // seed so the crossing is run against a rocket with one in it
+                // rather than one where the pick happened to go elsewhere.
+                app.init_resource::<Panel>();
                 app.add_systems(
                     Startup,
-                    |mut commands: Commands, assets: Res<AssetServer>| {
-                        build_level(&mut commands, &assets, Level::Rocket);
+                    |mut commands: Commands, assets: Res<AssetServer>, panel: Res<Panel>| {
+                        build_level(&mut commands, &assets, Level::Rocket, &panel);
                     },
                 );
                 app.add_systems(

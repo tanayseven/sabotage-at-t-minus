@@ -18,6 +18,7 @@ use bevy_rapier2d::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
 use crate::level::{Level, LevelEntity};
+use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
 use crate::setup::build_level;
@@ -203,6 +204,7 @@ pub fn leave_through_airlock(
     mut commands: Commands,
     assets: Res<AssetServer>,
     mut level: ResMut<Level>,
+    panel: Res<Panel>,
     players: Query<&Transform, With<Player>>,
     doors: Query<&Door>,
     built: Query<Entity, With<LevelEntity>>,
@@ -225,7 +227,7 @@ pub fn leave_through_airlock(
     for entity in &built {
         commands.entity(entity).despawn();
     }
-    build_level(&mut commands, &assets, next);
+    build_level(&mut commands, &assets, next, &panel);
 }
 
 #[cfg(test)]
