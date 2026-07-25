@@ -32,7 +32,7 @@ use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
-use crate::level::{Level, reach_exit, reset_level};
+use crate::level::{Level, reset_level};
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
 use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
@@ -123,10 +123,9 @@ fn main() {
         )
         .add_systems(
             Update,
-            (open_quit_dialog, reach_exit).run_if(in_state(PlayingState::Running)),
+            open_quit_dialog.run_if(in_state(PlayingState::Running)),
         )
-        // Re-frames the level whenever the run moves on to a new one, which
-        // includes the level a run opens on.
+        // Frames the level a run opens on.
         .add_systems(
             Update,
             apply_level_camera

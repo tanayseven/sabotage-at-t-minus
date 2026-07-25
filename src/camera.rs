@@ -50,10 +50,10 @@ fn projection(mode: CameraMode) -> Projection {
 }
 
 /// Frames the level that was just built. Runs on any change to [`Level`], which
-/// covers both starting a run and stepping through an exit part way through one.
+/// is what starting a run is.
 pub fn apply_level_camera(level: Res<Level>, cameras: Cameras, backdrops: Backdrops) {
     // Opens on the player's drop point rather than sliding over from wherever
-    // the last level left the camera.
+    // the launch pad left the camera.
     frame(level.camera(), level.player_spawn(), cameras, backdrops);
 }
 
