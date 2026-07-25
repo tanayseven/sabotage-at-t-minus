@@ -3,6 +3,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::countdown::spawn_countdown;
+use crate::manual::ManualButton;
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
@@ -16,8 +17,9 @@ const NORMAL_BUTTON: Color = Color::srgb(0.20, 0.22, 0.28);
 const HOVERED_BUTTON: Color = Color::srgb(0.28, 0.32, 0.40);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.45, 0.60);
 
-const HUD_QUIT_SIZE: Vec2 = Vec2::new(120.0, 44.0);
-const HUD_QUIT_FONT: f32 = 22.0;
+const HUD_BUTTON_SIZE: Vec2 = Vec2::new(120.0, 44.0);
+const HUD_BUTTON_FONT: f32 = 22.0;
+const HUD_BUTTON_GAP: f32 = 12.0;
 const HUD_COUNTDOWN_FONT: f32 = 56.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
@@ -89,7 +91,7 @@ pub fn button_visuals(
 pub fn spawn_hud(commands: &mut Commands) {
     commands.spawn((
         GameEntity,
-        Text::new("Sabotage at T-Minus\nA/D to move, W / space to jump"),
+        Text::new("Sabotage at T-Minus\nA/D to move, W / space to jump\nM for the repair manual"),
         Node {
             position_type: PositionType::Absolute,
             top: px(16),
@@ -125,11 +127,19 @@ pub fn spawn_hud(commands: &mut Commands) {
                 position_type: PositionType::Absolute,
                 top: px(16),
                 right: px(16),
+                column_gap: px(HUD_BUTTON_GAP),
                 ..default()
             },
         ))
         .with_children(|parent| {
-            spawn_button(parent, "Quit", QuitButton, HUD_QUIT_SIZE, HUD_QUIT_FONT);
+            spawn_button(
+                parent,
+                "Manual",
+                ManualButton,
+                HUD_BUTTON_SIZE,
+                HUD_BUTTON_FONT,
+            );
+            spawn_button(parent, "Quit", QuitButton, HUD_BUTTON_SIZE, HUD_BUTTON_FONT);
         });
 }
 
