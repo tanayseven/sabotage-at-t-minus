@@ -147,11 +147,24 @@ const ROCKET_LADDERS: [Ladder; 2] = [
 
 /// Kept clear of the doorways and the ladder holes, so nothing settles where it
 /// would wedge the player's way through.
+///
+/// There is a second rule here, and it is the one that bites: **no more than one
+/// crate may end up against any one door.** A player crossing a deck pushes what
+/// is loose on it along ahead of them and shoves it through the doorway when it
+/// opens, so crates gather at the far end of the route rather than staying put.
+/// A door has the reach to be worked over one crate; over two it cannot be
+/// reached at all, and since a crate will not go through a shut door, the run
+/// dead-ends there. That is exactly what a fourth crate in the airlock's own
+/// room used to do — the crate pushed in from next door joined it and sealed the
+/// way out. The one crate that is not on the route is parked beyond the upper
+/// ladder, behind where the player arrives, so it is never pushed anywhere.
+/// `a_player_can_cross_the_rocket_from_the_drop_point_to_the_airlock` is what
+/// holds this.
 const ROCKET_CRATES: [Vec2; 4] = [
     Vec2::new(-300.0, DECK_0 + 140.0),
     Vec2::new(200.0, DECK_1 + 140.0),
     Vec2::new(-180.0, DECK_2 + 140.0),
-    Vec2::new(320.0, DECK_2 + 140.0),
+    Vec2::new(-520.0, DECK_2 + 140.0),
 ];
 
 /// The far end of the bottom deck's left-hand room — the whole rocket is
@@ -565,6 +578,237 @@ mod tests {
             let head = GROUND_TOP + PLAYER_HEIGHT;
 
             assert!(underside >= head, "{ledge:?} hangs into head height");
+        }
+    }
+
+    /// Drives a whole run through the rocket with scripted input, against the
+    /// real level: [`build_level`] puts up the same walls, plates, ladders,
+    /// doors and crates a player gets, and the same systems move the character
+    /// through them. What it is really for is the joins — a door that opens onto
+    /// a ladder that comes up in a room whose door is out of reach is a run that
+    /// dead-ends, and every piece of that passes its own test on its own.
+    mod crossing {
+        use super::*;
+        use crate::config::PIXELS_PER_METER;
+        use crate::door::{leave_through_airlock, use_doors};
+        use crate::ladder::climb_ladder;
+        use crate::physics::configure_physics;
+        use crate::player::{Player, jump, move_player, probe_ground};
+        use crate::setup::build_level;
+        use bevy::asset::AssetPlugin;
+        use bevy_rapier2d::prelude::*;
+        use std::time::Duration;
+
+        const STEP: f32 = 1.0 / 60.0;
+        const A: KeyCode = KeyCode::KeyA;
+        const D: KeyCode = KeyCode::KeyD;
+        const E: KeyCode = KeyCode::KeyE;
+        const W: KeyCode = KeyCode::KeyW;
+
+        /// Where a player standing on a deck has their centre.
+        fn standing_on(deck: f32) -> f32 {
+            deck + PLAYER_HEIGHT / 2.0
+        }
+
+        struct Run {
+            app: App,
+            player: Entity,
+        }
+
+        impl Run {
+            fn start() -> Self {
+                let mut app = App::new();
+                app.add_plugins((
+                    MinimalPlugins,
+                    AssetPlugin::default(),
+                    TransformPlugin,
+                    RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
+                ));
+                app.insert_resource(TimestepMode::Fixed {
+                    dt: STEP,
+                    substeps: 1,
+                });
+                app.insert_resource(ButtonInput::<KeyCode>::default());
+                // The art is never rendered here, but the level still asks the
+                // asset server for it, and a handle cannot be handed out for a
+                // type the app has never heard of.
+                app.init_asset::<Image>();
+                app.init_resource::<Level>();
+                app.add_systems(Startup, configure_physics);
+                app.add_systems(
+                    Startup,
+                    |mut commands: Commands, assets: Res<AssetServer>| {
+                        build_level(&mut commands, &assets, Level::Rocket);
+                    },
+                );
+                app.add_systems(
+                    Update,
+                    (
+                        move_player,
+                        probe_ground,
+                        climb_ladder,
+                        jump,
+                        use_doors,
+                        leave_through_airlock,
+                    )
+                        .chain(),
+                );
+                app.update();
+
+                let player = {
+                    let mut query = app.world_mut().query_filtered::<Entity, With<Player>>();
+                    query.iter(app.world()).next().expect("no player was built")
+                };
+
+                Self { app, player }
+            }
+
+            fn at(&self) -> Vec2 {
+                self.app
+                    .world()
+                    .entity(self.player)
+                    .get::<Transform>()
+                    .expect("the player lost its transform")
+                    .translation
+                    .truncate()
+            }
+
+            fn step(&mut self, held: &[KeyCode]) {
+                let mut keys = ButtonInput::<KeyCode>::default();
+                for key in held {
+                    keys.press(*key);
+                }
+                self.app.world_mut().insert_resource(keys);
+                self.app
+                    .world_mut()
+                    .resource_mut::<Time>()
+                    .advance_by(Duration::from_secs_f32(STEP));
+                self.app.update();
+            }
+
+            fn hold(&mut self, held: &[KeyCode], steps: usize) {
+                for _ in 0..steps {
+                    self.step(held);
+                }
+            }
+
+            /// Holds the keys until the player is where `arrived` wants them, or
+            /// gives up. Reported rather than asserted so the caller can say what
+            /// it was that never happened.
+            fn hold_until(
+                &mut self,
+                held: &[KeyCode],
+                budget: usize,
+                arrived: impl Fn(Vec2) -> bool,
+            ) -> bool {
+                for _ in 0..budget {
+                    self.step(held);
+                    if arrived(self.at()) {
+                        return true;
+                    }
+                }
+                false
+            }
+
+            /// Walks into a shut door and reports where it brought the player up.
+            fn shut_out_by_the_door(&mut self, key: KeyCode) -> Vec2 {
+                self.hold(&[key], 400);
+                self.at()
+            }
+
+            fn level(&self) -> Level {
+                *self.app.world().resource::<Level>()
+            }
+        }
+
+        /// A shut door has to do two things, and the second is the one that was
+        /// wrong: stop the player, and stop them somewhere they can still work it
+        /// from. How far back that is depends on what they pushed there ahead of
+        /// them, so it is asked of the door itself rather than measured against a
+        /// distance picked by hand.
+        fn assert_shut_out(at: Vec2, approaching: KeyCode, deck: f32, name: &str) {
+            let door = Door::bulkhead(BULKHEAD_X, deck);
+            let short_of_it = match approaching {
+                D => at.x < BULKHEAD_X,
+                _ => at.x > BULKHEAD_X,
+            };
+
+            assert!(short_of_it, "{name}: walked through a shut door to {at:?}");
+            assert!(
+                door.in_reach(at),
+                "{name}: brought up at {at:?}, too far off the door to work it"
+            );
+        }
+
+        #[test]
+        fn a_player_can_cross_the_rocket_from_the_drop_point_to_the_airlock() {
+            let mut run = Run::start();
+
+            // The bottom deck: walk out of the drop point into the bulkhead.
+            let at = run.shut_out_by_the_door(D);
+            assert_shut_out(at, D, DECK_0, "deck 0");
+
+            // Work it, carry on, and take the ladder up.
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                "deck 0's door never let the player through to the lower ladder (stuck at {:?})",
+                run.at()
+            );
+            assert!(
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_1) - 1.0),
+                "the lower ladder never reached deck 1"
+            );
+
+            // Off the ladder onto solid plate, then back across to deck 1's door.
+            assert!(
+                run.hold_until(&[A], 300, |at| at.x <= LOWER_LADDER_X - LADDER_GAP),
+                "never stepped off the lower ladder onto deck 1"
+            );
+            let at = run.shut_out_by_the_door(A);
+            assert_shut_out(at, A, DECK_1, "deck 1");
+
+            // Through it and up the second ladder.
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
+                "deck 1's door never let the player through to the upper ladder"
+            );
+            assert!(
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_2) - 1.0),
+                "the upper ladder never reached deck 2"
+            );
+
+            // Off it, across the top deck, and through the last bulkhead.
+            assert!(
+                run.hold_until(&[D], 300, |at| at.x >= UPPER_LADDER_X + LADDER_GAP),
+                "never stepped off the upper ladder onto deck 2"
+            );
+            let at = run.shut_out_by_the_door(D);
+            assert_shut_out(at, D, DECK_2, "deck 2");
+
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[D], 600, |at| AIRLOCK.in_reach(at)),
+                "deck 2's door never let the player within reach of the airlock (stuck at {:?})",
+                run.at()
+            );
+
+            assert_eq!(
+                run.level(),
+                Level::Rocket,
+                "the run left the rocket before the airlock was worked"
+            );
+
+            // And out. Working the airlock while standing in it is what ends the
+            // level, so the walk and the press go in together.
+            run.hold(&[E, D], 6);
+
+            assert_eq!(
+                run.level(),
+                Level::Ascent,
+                "the airlock did not put the run out onto the ascent"
+            );
         }
     }
 

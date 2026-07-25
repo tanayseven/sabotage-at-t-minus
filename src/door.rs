@@ -6,10 +6,12 @@
 //! against a clock, and a door that shut behind the player would only ever cost
 //! them the same press twice.
 //!
-//! One door in the rocket is not a way between rooms but the way out. Opening
-//! the airlock does not by itself end the level: stepping into it does, which
-//! keeps a door a door — worked the same way as every other — and leaves the
-//! player the moment of walking out through it.
+//! One door in the rocket is not a way between rooms but the way out. It is
+//! worked like any other, and since working a door means standing at it, the
+//! press that opens the airlock is in practice the same one that puts the run
+//! outside. Opening it and leaving through it are still two systems rather than
+//! one, so that an airlock already open — walked away from and come back to —
+//! puts the player out just the same.
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -17,6 +19,7 @@ use bevy_rapier2d::prelude::*;
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
 use crate::level::{Level, LevelEntity};
 use crate::player::Player;
+use crate::props::LARGEST_CRATE_SIZE;
 use crate::setup::build_level;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
@@ -37,15 +40,29 @@ const AIRLOCK_COLOR: Color = Color::srgb(0.45, 0.9, 0.55);
 /// it, and behind the bulkhead tiles it is set into.
 const DOOR_Z: f32 = -2.0;
 
-/// Slack on the horizontal reach. Without it "in front of the door" would mean
-/// exactly the position a player pressed against a shut one ends up in, which
-/// is a boundary no float should be asked to sit on.
-const REACH_SLACK: f32 = 20.0;
+/// A little further than any of the arithmetic strictly needs, so the check
+/// never lands exactly on the position a player pressed up against something
+/// ends up in — a boundary no float should be asked to sit on.
+const REACH_MARGIN: f32 = 8.0;
 
-/// How far off a door's centre still counts as standing at it: the player's own
-/// half-extent plus the door's, which is when the two touch.
+/// How far off a door's centre still counts as standing at it.
+///
+/// Not simply where the player and the panel touch, which is what this was at
+/// first and what made doors look broken. A player walking a deck pushes
+/// whatever is loose on it along ahead of them, so they arrive at the door with
+/// a crate wedged between them and it, standing a crate's width further back
+/// than the panel's face. With the tighter reach that put the door out of range
+/// at exactly the moment the player was trying to open it, and the run
+/// dead-ended: the crate cannot go through a shut door, and the door could not
+/// be worked past the crate. So the reach is measured over the top of the
+/// largest crate that could be leaning on it.
+///
+/// Vertically there is no such problem — nothing is going to end up stacked
+/// between the player and a doorway they are standing in — so that stays at
+/// where the two touch, which is what keeps a door on the deck below from being
+/// worked through the floor.
 const REACH: Vec2 = Vec2::new(
-    (DOOR_SIZE.x + PLAYER_WIDTH) / 2.0 + REACH_SLACK,
+    DOOR_SIZE.x / 2.0 + LARGEST_CRATE_SIZE + PLAYER_WIDTH / 2.0 + REACH_MARGIN,
     (DOOR_SIZE.y + PLAYER_HEIGHT) / 2.0,
 );
 
@@ -237,6 +254,20 @@ mod tests {
 
         assert!(door.in_reach(standing));
         assert!(door.in_reach(Vec2::new(-touching, standing.y)));
+    }
+
+    /// The regression that made doors look broken: walking a deck shoves the
+    /// crates on it along ahead of you, so you arrive at the door standing a
+    /// crate's width back from it — and a reach measured to the panel's face
+    /// leaves you unable to open the one thing you are stood in front of.
+    #[test]
+    fn a_crate_shoved_against_a_door_does_not_shut_the_player_out() {
+        let door = Door::bulkhead(0.0, DECK);
+        let behind_the_crate = DOOR_SIZE.x / 2.0 + LARGEST_CRATE_SIZE + PLAYER_WIDTH / 2.0;
+        let standing = Vec2::new(behind_the_crate, DECK + PLAYER_HEIGHT / 2.0);
+
+        assert!(door.in_reach(standing));
+        assert!(door.in_reach(Vec2::new(-behind_the_crate, standing.y)));
     }
 
     #[test]
