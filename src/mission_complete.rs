@@ -22,6 +22,11 @@ pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
     } else {
         "Back to Menu"
     };
+    let message = if level.next().is_some() {
+        "All clear - ready for the next room.\nPress Space to continue."
+    } else {
+        "Congratulations! You can safely fly off now.\nPress Space to continue."
+    };
 
     commands
         .spawn((
@@ -60,7 +65,7 @@ pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
                         TextColor(ACCENT),
                     ));
                     panel.spawn((
-                        Text::new("Portal challenge cleared. Ready for the next stage.\nPress Space to continue."),
+                        Text::new(message),
                         TextFont {
                             font_size: FontSize::Px(22.0),
                             ..default()

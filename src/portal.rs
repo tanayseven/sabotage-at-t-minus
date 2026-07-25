@@ -26,6 +26,9 @@ pub struct Portal {
     pub used: bool,
 }
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct TriggeredPortal(pub Entity);
+
 #[derive(Component)]
 pub struct PortalPulse;
 
@@ -73,7 +76,7 @@ pub fn spawn_portals(
 pub fn enter_portal(
     mut commands: Commands,
     players: Query<&Transform, With<Player>>,
-    mut portals: Query<(&Transform, &mut Portal)>,
+    mut portals: Query<(Entity, &Transform, &mut Portal)>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Some(player) = players.iter().next() else {
@@ -83,10 +86,10 @@ pub fn enter_portal(
     let player_pos = player.translation.truncate();
     let nearest = portals
         .iter_mut()
-        .filter(|(portal_transform, portal)| {
+        .filter(|(_, portal_transform, portal)| {
             !portal.used && portal_transform.translation.truncate().distance(player_pos) <= PORTAL_RADIUS
         })
-        .min_by(|(one_transform, _), (other_transform, _)| {
+        .min_by(|(_, one_transform, _), (_, other_transform, _)| {
             one_transform
                 .translation
                 .truncate()
@@ -94,11 +97,12 @@ pub fn enter_portal(
                 .total_cmp(&other_transform.translation.truncate().distance_squared(player_pos))
         });
 
-    let Some((_, mut portal)) = nearest else {
+    let Some((entity, _, mut portal)) = nearest else {
         return;
     };
 
     portal.used = true;
+    commands.insert_resource(TriggeredPortal(entity));
     queue_minigame(
         &mut commands,
         crate::minigames::MinigameConfig { id: portal.minigame },
