@@ -17,12 +17,10 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
-use crate::level::{Level, LevelEntity, LevelProgress};
+use crate::level::{Level, LevelProgress};
 use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
-use crate::puzzles::RocketPuzzles;
-use crate::setup::{RunState, build_level};
 use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
@@ -248,20 +246,12 @@ pub fn use_doors(
     commands.entity(entity).remove::<Collider>();
 }
 
-/// Swaps the level out from under the player when they step into an opened
-/// airlock. The geometry goes with it; the HUD and the mission clock do not,
-/// so the run carries straight on into the next level.
-#[allow(clippy::too_many_arguments)]
+/// Ends the run when the player steps into the opened airlock. It is the way
+/// back out of the rocket and there is nothing beyond it, so stepping through
+/// is the mission finished rather than the next level starting.
 pub fn leave_through_airlock(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    mut level: ResMut<Level>,
-    panel: Res<Panel>,
-    puzzles: Res<RocketPuzzles>,
     players: Query<&Transform, With<Player>>,
     doors: Query<&Door>,
-    built: Query<Entity, With<LevelEntity>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Ok(player) = players.single() else {
@@ -273,30 +263,7 @@ pub fn leave_through_airlock(
         door.kind == DoorKind::Airlock && door.open && !door.locked && door.in_reach(at)
     });
 
-    let Some(next) = stepped_out.then(|| level.next()) else {
-        return;
-    };
-
-    if let Some(next_level) = next {
-        *level = next_level;
-        let progress = LevelProgress::new(next_level);
-        commands.insert_resource(progress);
-
-        for entity in &built {
-            commands.entity(entity).despawn();
-        }
-        build_level(
-            &mut commands,
-            &assets,
-            &mut images,
-            next_level,
-            RunState {
-                puzzles: *puzzles,
-                panel: *panel,
-                progress,
-            },
-        );
-    } else {
+    if stepped_out {
         next_playing.set(PlayingState::MissionComplete);
     }
 }

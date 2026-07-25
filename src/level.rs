@@ -1,37 +1,35 @@
-//! The levels a run is made of, and what makes each one different.
+//! The level a run is made of.
 //!
-//! A run starts inside the rocket. Leaving through the airlock transitions to
-//! the ascent, and then to the upper deck through the portal/minigame flow.
+//! A run is the rocket: six rooms with a job in three of them, and the airlock
+//! at the far end of the top deck. The airlock is the way back out, and working
+//! it is what finishes the run — there is nothing after the rocket, so what was
+//! once a doorway onto the next level is now the end of the mission.
 
 use bevy::prelude::*;
 
-use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
+use crate::config::{DESIGN_HEIGHT, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
 use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
-use crate::minigames::{CompletedMinigame, MINIGAME_COUNT, MinigameId, MinigameOutcome};
+use crate::minigames::{CompletedMinigame, MINIGAME_COUNT, MinigameOutcome};
 use crate::platform::Platform;
 use crate::portal::TriggeredPortal;
 use crate::state::PlayingState;
 use crate::wall::Wall;
 
 /// Marks the level geometry: walls, platforms, ladders, doors, crates and the
-/// player. Cleared both when the run ends and when it moves on to the next
-/// level, which is what separates it from the HUD's
+/// player. Cleared when the run ends, which is what separates it from the HUD's
 /// [`crate::setup::GameEntity`].
 #[derive(Component, Clone)]
 pub struct LevelEntity;
 
-/// Which scene the current run is in. Levels run in the order below, and the
-/// mission clock resets for each level.
+/// Which scene the current run is in. There is one, and it is kept as a level
+/// rather than folded away so the camera, the HUD and the doors carry on asking
+/// the level what to do rather than assuming it.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
-    /// Where the run starts: rooms inside the rocket.
+    /// The whole run: the rooms inside the rocket.
     #[default]
     Rocket,
-    /// Open ground outside the rocket.
-    Ascent,
-    /// The third stage reached after clearing the ascent's portal challenge.
-    UpperDeck,
 }
 
 /// How the camera frames a level.
@@ -54,6 +52,9 @@ impl CameraMode {
     }
 }
 
+/// The layout of a level. The breaches are not in it: they stand in whichever
+/// rooms the run dealt them, which is [`crate::puzzles::RocketPuzzles`]'s to say
+/// rather than the layout's.
 #[derive(Clone, Copy)]
 pub struct LevelConfig {
     pub platforms: &'static [Platform],
@@ -63,11 +64,9 @@ pub struct LevelConfig {
     pub crates: &'static [Vec2],
     pub player_spawn: Vec2,
     pub camera: CameraMode,
-    pub portal_positions: &'static [Vec2],
-    pub portal_minigames: &'static [MinigameId],
 }
 
-/// How much of the current level's portal objective has been completed.
+/// How much of the run's breach objective has been sealed.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LevelProgress {
     pub total_portals: usize,
@@ -91,9 +90,8 @@ impl LevelProgress {
         self.completed_portals >= self.total_portals
     }
 
-    /// A level is solved when every obstacle type present on that level has
-    /// been solved: the panel challenge (if this level has it) and all portal
-    /// challenges (if any portals are present).
+    /// The run is clear when every obstacle on the level has been worked: the
+    /// panel (if this level has it) and every breach.
     pub fn all_obstacles_completed(
         &self,
         level: Level,
@@ -110,14 +108,8 @@ impl LevelProgress {
     }
 }
 
-/// Top of the floor, shared by the rocket's bottom deck and the outside ground.
+/// Top of the floor the rocket's bottom deck is laid on.
 const GROUND_TOP: f32 = -DESIGN_HEIGHT / 2.0;
-const FOLLOW_BOUNDS: Rect = Rect::new(
-    -2100.0,
-    GROUND_TOP - PLATFORM_HEIGHT,
-    2100.0,
-    GROUND_TOP + 1400.0,
-);
 
 // ---------------------------------------------------------------------------
 // Rocket level
@@ -136,6 +128,7 @@ const ROCKET_CEILING: f32 = DECK_2 + DECK_HEIGHT;
 const LOWER_LADDER_X: f32 = 400.0;
 const UPPER_LADDER_X: f32 = -400.0;
 const LADDER_GAP: f32 = LADDER_CLEARANCE;
+/// The way back out, at the far end of the top deck. Working it ends the run.
 const AIRLOCK_X: f32 = HULL_RIGHT - WALL_THICKNESS / 2.0;
 
 const fn plate(from: f32, to: f32, top: f32) -> Platform {
@@ -200,8 +193,6 @@ const ROCKET_CONFIG: LevelConfig = LevelConfig {
             ROCKET_CEILING,
         ),
     },
-    portal_positions: &[],
-    portal_minigames: &[],
 };
 
 // ---------------------------------------------------------------------------
@@ -318,134 +309,10 @@ const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
     Room::from_index(5),
 ];
 
-// ---------------------------------------------------------------------------
-// The ascent
-// ---------------------------------------------------------------------------
-
-const ASCENT_PLATFORMS: [Platform; 13] = [
-    Platform::with_top(0.0, GROUND_TOP, 4600.0),
-    Platform::with_top(-1600.0, GROUND_TOP + 180.0, 330.0),
-    Platform::with_top(-1240.0, GROUND_TOP + 280.0, 330.0),
-    Platform::with_top(-880.0, GROUND_TOP + 210.0, 330.0),
-    Platform::with_top(-520.0, GROUND_TOP + 320.0, 330.0),
-    Platform::with_top(-160.0, GROUND_TOP + 240.0, 330.0),
-    Platform::with_top(200.0, GROUND_TOP + 350.0, 330.0),
-    Platform::with_top(560.0, GROUND_TOP + 260.0, 330.0),
-    Platform::with_top(920.0, GROUND_TOP + 360.0, 330.0),
-    Platform::with_top(1300.0, GROUND_TOP + 480.0, 220.0),
-    Platform::with_top(1520.0, GROUND_TOP + 610.0, 220.0),
-    Platform::with_top(1740.0, GROUND_TOP + 740.0, 220.0),
-    Platform::with_top(1960.0, GROUND_TOP + 870.0, 220.0),
-];
-
-const ASCENT_CRATES: [Vec2; 5] = [
-    Vec2::new(-1240.0, GROUND_TOP + 400.0),
-    Vec2::new(-520.0, GROUND_TOP + 440.0),
-    Vec2::new(200.0, GROUND_TOP + 470.0),
-    Vec2::new(920.0, GROUND_TOP + 480.0),
-    Vec2::new(1740.0, GROUND_TOP + 860.0),
-];
-
-const ASCENT_EXIT_X: f32 = 2048.0;
-const ASCENT_EXIT: Door = Door::airlock(ASCENT_EXIT_X, GROUND_TOP + 870.0);
-
-const EMPTY_WALLS: [Wall; 0] = [];
-const EMPTY_LADDERS: [Ladder; 0] = [];
-
-const ASCENT_DOORS: [Door; 1] = [ASCENT_EXIT];
-
-const ASCENT_PORTALS: [Vec2; 3] = [
-    Vec2::new(-1600.0, GROUND_TOP + 180.0 + 48.0),
-    Vec2::new(-880.0, GROUND_TOP + 210.0 + 48.0),
-    Vec2::new(560.0, GROUND_TOP + 260.0 + 48.0),
-];
-
-const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [MinigameId::TapChallenge, MinigameId::BrokenWire];
-
-const ASCENT_CONFIG: LevelConfig = LevelConfig {
-    platforms: &ASCENT_PLATFORMS,
-    walls: &EMPTY_WALLS,
-    ladders: &EMPTY_LADDERS,
-    doors: &ASCENT_DOORS,
-    crates: &ASCENT_CRATES,
-    player_spawn: Vec2::new(-2050.0, GROUND_TOP + 60.0),
-    camera: CameraMode::Follow {
-        zoom: FOLLOW_ZOOM,
-        bounds: FOLLOW_BOUNDS,
-    },
-    portal_positions: &ASCENT_PORTALS,
-    portal_minigames: &ASCENT_PORTAL_MINIGAMES,
-};
-
-// ---------------------------------------------------------------------------
-// Upper deck level
-// ---------------------------------------------------------------------------
-
-const UPPER_DECK_PLATFORMS: [Platform; 13] = [
-    Platform::with_top(0.0, GROUND_TOP, 4600.0),
-    Platform::with_top(-1480.0, GROUND_TOP + 220.0, 250.0),
-    Platform::with_top(-1160.0, GROUND_TOP + 310.0, 290.0),
-    Platform::with_top(-840.0, GROUND_TOP + 200.0, 260.0),
-    Platform::with_top(-520.0, GROUND_TOP + 380.0, 250.0),
-    Platform::with_top(-200.0, GROUND_TOP + 270.0, 310.0),
-    Platform::with_top(120.0, GROUND_TOP + 420.0, 280.0),
-    Platform::with_top(440.0, GROUND_TOP + 310.0, 300.0),
-    Platform::with_top(760.0, GROUND_TOP + 460.0, 260.0),
-    Platform::with_top(1120.0, GROUND_TOP + 520.0, 210.0),
-    Platform::with_top(1320.0, GROUND_TOP + 640.0, 210.0),
-    Platform::with_top(1520.0, GROUND_TOP + 760.0, 210.0),
-    Platform::with_top(1980.0, GROUND_TOP + 880.0, 240.0),
-];
-
-const UPPER_DECK_CRATES: [Vec2; 5] = [
-    Vec2::new(-1160.0, UPPER_DECK_PLATFORMS[2].top() + 120.0),
-    Vec2::new(-200.0, UPPER_DECK_PLATFORMS[5].top() + 120.0),
-    Vec2::new(440.0, UPPER_DECK_PLATFORMS[7].top() + 120.0),
-    Vec2::new(1320.0, UPPER_DECK_PLATFORMS[10].top() + 120.0),
-    Vec2::new(1720.0, UPPER_DECK_PLATFORMS[12].top() + 120.0),
-];
-
-const UPPER_DECK_PORTALS: [Vec2; 4] = [
-    Vec2::new(-1480.0, UPPER_DECK_PLATFORMS[1].top() + 48.0),
-    Vec2::new(-840.0, UPPER_DECK_PLATFORMS[3].top() + 48.0),
-    Vec2::new(120.0, UPPER_DECK_PLATFORMS[6].top() + 48.0),
-    Vec2::new(760.0, UPPER_DECK_PLATFORMS[8].top() + 48.0),
-];
-
-const UPPER_DECK_EXIT_X: f32 = 2048.0;
-const UPPER_DECK_EXIT: Door = Door::airlock(UPPER_DECK_EXIT_X, UPPER_DECK_PLATFORMS[12].top());
-
-const UPPER_DECK_DOORS: [Door; 1] = [UPPER_DECK_EXIT];
-
-const UPPER_DECK_CONFIG: LevelConfig = LevelConfig {
-    platforms: &UPPER_DECK_PLATFORMS,
-    walls: &EMPTY_WALLS,
-    ladders: &EMPTY_LADDERS,
-    doors: &UPPER_DECK_DOORS,
-    crates: &UPPER_DECK_CRATES,
-    player_spawn: Vec2::new(-2000.0, GROUND_TOP + 60.0),
-    camera: CameraMode::Follow {
-        zoom: FOLLOW_ZOOM,
-        bounds: FOLLOW_BOUNDS,
-    },
-    portal_positions: &UPPER_DECK_PORTALS,
-    portal_minigames: &ASCENT_PORTAL_MINIGAMES,
-};
-
 impl Level {
     pub fn config(self) -> LevelConfig {
         match self {
             Level::Rocket => ROCKET_CONFIG,
-            Level::Ascent => ASCENT_CONFIG,
-            Level::UpperDeck => UPPER_DECK_CONFIG,
-        }
-    }
-
-    pub fn next(self) -> Option<Self> {
-        match self {
-            Level::Rocket => Some(Level::Ascent),
-            Level::Ascent => Some(Level::UpperDeck),
-            Level::UpperDeck => None,
         }
     }
 
@@ -465,13 +332,10 @@ impl Level {
         self.config().doors
     }
 
-    /// The rooms the level is divided into. Only the rocket has any: the ascent
-    /// is open ground, with nothing to be inside of.
+    /// The rooms the level is divided into.
     pub fn rooms(self) -> &'static [Room] {
         match self {
             Level::Rocket => &ROCKET_ROOMS,
-            Level::Ascent => &[],
-            Level::UpperDeck => &[],
         }
     }
 
@@ -483,30 +347,13 @@ impl Level {
         self.config().player_spawn
     }
 
-    /// Where this level's portals are written down. The rocket's are not: they
-    /// stand in the rooms dealt for the run, so it is
-    /// [`crate::puzzles::RocketPuzzles`] that says where they are.
-    pub fn portals(self) -> &'static [Vec2] {
-        self.config().portal_positions
-    }
-
-    pub fn portal_minigames(self) -> &'static [MinigameId] {
-        self.config().portal_minigames
-    }
-
-    /// How many portals this level puts up, which is what the objective counts
-    /// down. Inside the rocket that is one breach per kind of challenge, one
-    /// room each, however the rooms happen to be dealt.
+    /// How many breaches this level puts up, which is what the objective counts
+    /// down: one per kind of challenge, one room each, however the rooms happen
+    /// to be dealt.
     pub fn portal_count(self) -> usize {
         match self {
             Level::Rocket => MINIGAME_COUNT,
-            _ => self.portals().len(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn portal_anchor(self) -> Option<Vec2> {
-        self.portals().first().copied()
     }
 
     pub fn camera(self) -> CameraMode {
@@ -520,13 +367,8 @@ pub fn reset_level(mut commands: Commands) {
     commands.insert_resource(Level::default());
 }
 
-/// Marks a queued level transition that should be applied when gameplay returns
-/// to the running state.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct PendingLevelAdvance(pub Level);
-
-/// Routes minigame outcomes through the level, which is where branching rules
-/// belong once there is more than one level and more than one challenge.
+/// Routes minigame outcomes through the level, which is where the rules about
+/// what a finished challenge means to the run belong.
 pub fn react_to_minigame_result(
     mut commands: Commands,
     completed: Option<Res<CompletedMinigame>>,
@@ -560,52 +402,44 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        AIRLOCK, ASCENT_PLATFORMS, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door,
-        FOLLOW_ZOOM, GROUND_TOP, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress, PLATFORM_HEIGHT,
-        ROOM_COUNT, Room, UPPER_LADDER_X,
+        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door, LADDER_GAP, LOWER_LADDER_X,
+        Level, LevelProgress, ROOM_COUNT, Room, UPPER_LADDER_X,
     };
-    use crate::config::{PLAYER_HEIGHT, VIEW_HEIGHT};
+    use crate::config::PLAYER_HEIGHT;
 
     #[test]
     fn a_run_opens_inside_the_rocket() {
         assert_eq!(Level::default(), Level::Rocket);
     }
 
+    /// The rocket is the run: there is nothing after it, and the airlock at
+    /// the end of the top deck is the way back out rather than a doorway onto
+    /// somewhere else.
     #[test]
-    fn levels_chain_in_order() {
-        assert_eq!(Level::Rocket.next(), Some(Level::Ascent));
-        assert_eq!(Level::Ascent.next(), Some(Level::UpperDeck));
-        assert_eq!(Level::UpperDeck.next(), None);
-    }
-
-    #[test]
-    fn only_rocket_has_structural_geometry() {
+    fn the_rocket_is_the_whole_run() {
         assert!(!Level::Rocket.walls().is_empty());
         assert!(!Level::Rocket.ladders().is_empty());
-        assert!(!Level::Rocket.doors().is_empty());
-
-        assert!(Level::Ascent.walls().is_empty());
-        assert!(Level::Ascent.ladders().is_empty());
-        assert_eq!(Level::Ascent.doors().len(), 1);
-
-        assert!(Level::UpperDeck.walls().is_empty());
-        assert!(Level::UpperDeck.ladders().is_empty());
-        assert_eq!(Level::UpperDeck.doors().len(), 1);
+        assert_eq!(Level::Rocket.doors().len(), 4);
+        assert_eq!(AIRLOCK.kind, crate::door::DoorKind::Airlock);
     }
 
+    /// The exit is on the far side of the top deck, past the last bulkhead —
+    /// the end of the crossing, not somewhere the player starts next to. Read
+    /// off the level's own doors, so a layout that stopped shipping the airlock
+    /// fails here rather than passing against the constant.
     #[test]
-    fn ascent_has_a_final_exit_door() {
-        assert_eq!(
-            Level::Ascent.doors()[0].kind,
-            crate::door::DoorKind::Airlock
-        );
-    }
+    fn the_exit_is_at_the_far_end_of_the_rocket() {
+        let spawn = Level::Rocket.player_spawn();
+        let exit = Level::Rocket
+            .doors()
+            .iter()
+            .find(|door| door.kind == crate::door::DoorKind::Airlock)
+            .expect("the rocket has no way back out");
 
-    #[test]
-    fn upper_deck_has_a_final_exit_door() {
-        assert_eq!(
-            Level::UpperDeck.doors()[0].kind,
-            crate::door::DoorKind::Airlock
+        assert!(exit.at.x > BULKHEAD_X, "the exit is not past the bulkhead");
+        assert!(
+            exit.sill() > spawn.y,
+            "the exit is on the deck the run starts on"
         );
     }
 
@@ -616,9 +450,6 @@ mod tests {
         use crate::minigames::MINIGAME_COUNT;
 
         assert_eq!(Level::Rocket.portal_count(), MINIGAME_COUNT);
-        // Its portals stand in the rooms dealt for the run rather than at
-        // positions written into the layout.
-        assert!(Level::Rocket.portals().is_empty());
     }
 
     /// A breach is walked into rather than worked, so one hung out of the
@@ -676,107 +507,14 @@ mod tests {
         }
     }
 
+    /// The run has to open with the whole of the drop point on screen.
     #[test]
-    fn the_outdoor_levels_have_portals() {
-        assert!(Level::Ascent.portal_anchor().is_some());
-        assert!(Level::Ascent.portals().len() > 1);
-        assert!(Level::Ascent.portal_minigames().len() > 1);
-
-        assert!(Level::UpperDeck.portal_anchor().is_some());
-        assert!(Level::UpperDeck.portals().len() > 1);
-        assert!(Level::UpperDeck.portal_minigames().len() > 1);
-    }
-
-    #[test]
-    fn second_level_has_distinct_layout_data() {
-        let ascent = Level::Ascent.config();
-        let upper = Level::UpperDeck.config();
-
-        assert_ne!(ascent.platforms.as_ptr(), upper.platforms.as_ptr());
-        assert_ne!(ascent.crates.as_ptr(), upper.crates.as_ptr());
-        assert_ne!(
-            Level::Ascent.player_spawn(),
-            Level::UpperDeck.player_spawn()
-        );
-    }
-
-    #[test]
-    fn every_level_spawns_inside_camera_bounds() {
-        for level in [Level::Rocket, Level::Ascent, Level::UpperDeck] {
-            let CameraMode::Follow { bounds, .. } = level.camera() else {
-                panic!("{level:?} is meant to use a following camera");
-            };
-
-            assert!(bounds.contains(level.player_spawn()));
-        }
-    }
-
-    #[test]
-    fn the_ascent_tracks_the_player() {
-        assert!(matches!(
-            Level::Ascent.camera(),
-            CameraMode::Follow { zoom, .. } if zoom > 1.0
-        ));
-    }
-
-    /// Every ledge of the ascent has to be reachable from the one before it, or
-    /// the run dead-ends part way along.
-    #[test]
-    fn the_ascent_can_be_climbed() {
-        use crate::config::{GRAVITY, JUMP_SPEED, PLAYER_SPEED};
-
-        let rise = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
-        let reach = PLAYER_SPEED * 2.0 * JUMP_SPEED / GRAVITY;
-
-        // Skipping the ground, which every ledge sits above rather than after.
-        for pair in ASCENT_PLATFORMS[1..].windows(2) {
-            let (from, to) = (&pair[0], &pair[1]);
-            let gap = (to.centre.x - to.width / 2.0) - (from.centre.x + from.width / 2.0);
-
-            assert!(
-                to.top() - from.top() <= rise,
-                "unreachable rise onto {to:?}"
-            );
-            assert!(gap <= reach, "unjumpable gap before {to:?}");
-        }
-    }
-
-    /// The lesson the first draft of this level taught: at [`FOLLOW_ZOOM`] the
-    /// camera sits on the floor of the level while the player is on the ground,
-    /// so a ledge much above it is simply not on screen. The long run has to
-    /// stay under that line or the player runs through an empty frame.
-    #[test]
-    fn the_long_run_is_visible_from_the_ground() {
-        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
-            panic!("the ascent is meant to use a following camera");
+    fn the_run_spawns_inside_the_camera_bounds() {
+        let CameraMode::Follow { bounds, .. } = Level::Rocket.camera() else {
+            panic!("the rocket is meant to use a following camera");
         };
-        // The narrowest the viewport ever gets vertically, and so the least
-        // that is ever on screen.
-        let half_view = VIEW_HEIGHT / FOLLOW_ZOOM / 2.0;
-        let camera_y = (GROUND_TOP + PLAYER_HEIGHT / 2.0)
-            .clamp(bounds.min.y + half_view, bounds.max.y - half_view);
-        let top_of_screen = camera_y + half_view;
 
-        let long_run = &ASCENT_PLATFORMS[1..=8];
-        for ledge in long_run {
-            assert!(
-                ledge.top() <= top_of_screen,
-                "{ledge:?} is off the top of the screen"
-            );
-        }
-    }
-
-    /// What wedged the player against the first ledge on the first play-through:
-    /// a ledge slung low enough that its underside catches someone running along
-    /// the floor. Every ledge has to clear a standing player.
-    #[test]
-    fn nothing_in_the_ascent_hangs_low_enough_to_snag_on() {
-        for ledge in &ASCENT_PLATFORMS[1..] {
-            let underside = ledge.top() - PLATFORM_HEIGHT;
-            let head = GROUND_TOP + PLAYER_HEIGHT;
-
-            assert!(underside >= head, "{ledge:?} hangs into head height");
-        }
+        assert!(bounds.contains(Level::Rocket.player_spawn()));
     }
 
     /// Drives a whole run through the rocket with scripted input, against the
@@ -827,7 +565,7 @@ mod tests {
                     RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
                     bevy::state::app::StatesPlugin,
                 ));
-                app.init_state::<GameState>();
+                app.insert_state(GameState::Playing);
                 app.add_sub_state::<PlayingState>();
                 app.insert_resource(TimestepMode::Fixed {
                     dt: STEP,
@@ -950,6 +688,14 @@ mod tests {
                 *self.app.world().resource::<Level>()
             }
 
+            fn playing_state(&self) -> PlayingState {
+                self.app
+                    .world()
+                    .resource::<State<PlayingState>>()
+                    .get()
+                    .clone()
+            }
+
             /// How many of the rocket's breaches the crossing has walked into.
             fn breaches_met(&mut self) -> usize {
                 let mut query = self.app.world_mut().query::<&Portal>();
@@ -1067,29 +813,15 @@ mod tests {
             run.hold(&[E, D], 6);
 
             assert_eq!(
-                run.level(),
-                Level::Ascent,
-                "the airlock did not put the run out onto the ascent"
+                run.playing_state(),
+                PlayingState::MissionComplete,
+                "stepping out of the rocket did not finish the run"
             );
         }
     }
 
-    /// The ascent has no side walls, so its ground has to reach past both edges
-    /// of the camera's travel or the player can walk off the end of the world.
-    #[test]
-    fn the_ascent_ground_runs_past_the_camera_bounds() {
-        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
-            panic!("the ascent is meant to use a following camera");
-        };
-        let ground = &ASCENT_PLATFORMS[0];
-        let half_width = ground.width / 2.0;
-
-        assert!(ground.centre.x - half_width < bounds.min.x);
-        assert!(ground.centre.x + half_width > bounds.max.x);
-    }
-
-    /// Inside the rocket every kind of job has to be done: the panel *and* each
-    /// breach. Out on the open levels there is no panel to ask for.
+    /// Every kind of job has to be done before the run is clear: the panel
+    /// *and* each breach.
     #[test]
     fn all_obstacles_require_panel_only_when_present() {
         let rocket_progress = LevelProgress::new(Level::Rocket);
@@ -1105,12 +837,5 @@ mod tests {
         rocket_done.completed_portals = rocket_done.total_portals;
         assert!(!rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, false));
         assert!(rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, true));
-
-        let ascent_progress = LevelProgress::new(Level::Ascent);
-        assert!(!ascent_progress.all_obstacles_completed(Level::Ascent, rocket_room, false));
-
-        let mut ascent_done = LevelProgress::new(Level::Ascent);
-        ascent_done.completed_portals = ascent_done.total_portals;
-        assert!(ascent_done.all_obstacles_completed(Level::Ascent, rocket_room, false));
     }
 }

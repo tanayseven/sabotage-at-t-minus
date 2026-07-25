@@ -28,11 +28,6 @@ impl Platform {
         Self::new(x, top - PLATFORM_HEIGHT / 2.0, width)
     }
 
-    /// The surface the player stands on.
-    pub const fn top(&self) -> f32 {
-        self.centre.y + PLATFORM_HEIGHT / 2.0
-    }
-
     pub fn spawn(&self, commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
         commands.spawn((
             marker.clone(),
