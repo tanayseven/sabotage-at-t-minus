@@ -250,6 +250,7 @@ pub fn use_doors(
 /// Swaps the level out from under the player when they step into an opened
 /// airlock. The geometry goes with it; the HUD and the mission clock do not,
 /// so the run carries straight on into the next level.
+#[allow(clippy::too_many_arguments)]
 pub fn leave_through_airlock(
     mut commands: Commands,
     assets: Res<AssetServer>,

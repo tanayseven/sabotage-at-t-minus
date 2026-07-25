@@ -319,6 +319,8 @@ pub fn spawn_minigame_window(
         });
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 pub fn run_active_minigame(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,

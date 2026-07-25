@@ -728,7 +728,7 @@ mod tests {
                     AssetPlugin::default(),
                     TransformPlugin,
                     RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
-                    bevy::state::app::StatesPlugin::default(),
+                    bevy::state::app::StatesPlugin,
                 ));
                 app.init_state::<GameState>();
                 app.add_sub_state::<PlayingState>();
