@@ -23,6 +23,11 @@ pub enum GameState {
 pub enum PlayingState {
     #[default]
     Running,
+    /// A modal challenge opened from an in-level trigger (for now: the portal
+    /// at the end of the ascent).
+    Minigame,
     ConfirmQuit,
     GameOver,
+    /// Run finished successfully.
+    MissionComplete,
 }

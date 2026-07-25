@@ -7,7 +7,9 @@
 use bevy::prelude::*;
 
 use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, PLATFORM_HEIGHT};
+use crate::minigames::{CompletedMinigame, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
+use crate::state::PlayingState;
 
 /// Marks the level geometry: platforms, crates and the player. Cleared when the
 /// run ends, which is what separates it from the HUD's
@@ -131,6 +133,14 @@ const ASCENT_CRATES: [Vec2; 5] = [
     Vec2::new(rung(2.0).centre.x, rung(2.0).top() + 120.0),
 ];
 
+/// How far beyond the final platform the portal is placed.
+const PORTAL_AHEAD: f32 = 110.0;
+/// Lift from platform top to portal centre.
+const PORTAL_UP: f32 = 48.0;
+/// Keep the portal a little inside the camera's right clamp so it is visible
+/// before the player reaches it.
+const PORTAL_CAMERA_INSET: f32 = 20.0;
+
 impl Level {
     pub fn platforms(self) -> &'static [Platform] {
         match self {
@@ -147,6 +157,20 @@ impl Level {
     pub fn player_spawn(self) -> Vec2 {
         match self {
             Level::Ascent => Vec2::new(ASCENT_BAND_START - 450.0, GROUND_TOP + 60.0),
+        }
+    }
+
+    pub fn portal_anchor(self) -> Vec2 {
+        match self {
+            Level::Ascent => {
+                let last = &ASCENT_PLATFORMS[ASCENT_PLATFORMS.len() - 1];
+                let desired_x = last.centre.x + last.width / 2.0 + PORTAL_AHEAD;
+                let visible_limit_x = ASCENT_REACH - PORTAL_CAMERA_INSET;
+                Vec2::new(
+                    desired_x.min(visible_limit_x),
+                    last.top() + PORTAL_UP,
+                )
+            }
         }
     }
 
@@ -171,9 +195,36 @@ pub fn reset_level(mut commands: Commands) {
     commands.insert_resource(Level::default());
 }
 
+/// Routes minigame outcomes through the level, which is where branching rules
+/// belong once there is more than one level and more than one challenge.
+pub fn react_to_minigame_result(
+    mut commands: Commands,
+    level: Res<Level>,
+    completed: Option<Res<CompletedMinigame>>,
+    mut next_playing: ResMut<NextState<PlayingState>>,
+) {
+    let Some(completed) = completed else {
+        return;
+    };
+
+    match (*level, completed.id, completed.outcome) {
+        (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::Success) => {
+            next_playing.set(PlayingState::MissionComplete);
+        }
+        (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::Failure) => {
+            next_playing.set(PlayingState::GameOver);
+        }
+    }
+
+    commands.remove_resource::<CompletedMinigame>();
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ASCENT_PLATFORMS, CameraMode, FOLLOW_ZOOM, GROUND_TOP, Level, PLATFORM_HEIGHT};
+    use super::{
+        ASCENT_PLATFORMS, CameraMode, FOLLOW_ZOOM, GROUND_TOP, Level, PLATFORM_HEIGHT,
+        PORTAL_AHEAD, PORTAL_CAMERA_INSET,
+    };
     use crate::config::PLAYER_HEIGHT;
 
     #[test]
@@ -274,5 +325,22 @@ mod tests {
 
         assert!(ground.centre.x - half_width < bounds.min.x);
         assert!(ground.centre.x + half_width > bounds.max.x);
+    }
+
+    #[test]
+    fn the_portal_sits_beyond_the_final_platform() {
+        let portal = Level::Ascent.portal_anchor();
+        let last = &ASCENT_PLATFORMS[ASCENT_PLATFORMS.len() - 1];
+        let last_right = last.centre.x + last.width / 2.0;
+
+        assert!(portal.x >= last_right);
+        assert!(portal.x <= (last_right + PORTAL_AHEAD));
+    }
+
+    #[test]
+    fn the_portal_is_inside_the_camera_right_bound() {
+        let portal = Level::Ascent.portal_anchor();
+
+        assert!(portal.x <= 2100.0 - PORTAL_CAMERA_INSET);
     }
 }

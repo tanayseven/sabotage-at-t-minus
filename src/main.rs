@@ -7,12 +7,15 @@ mod launchpad;
 mod level;
 mod manual;
 mod menu;
+mod minigames;
+mod mission_complete;
 mod music;
 mod options;
 mod physics;
 mod platform;
 mod player;
 mod player_animation;
+mod portal;
 mod props;
 mod quit;
 mod settings;
@@ -33,11 +36,15 @@ use crate::countdown::{MissionTimer, reset_mission_timer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
-use crate::level::{Level, reset_level};
+use crate::level::{Level, react_to_minigame_result, reset_level};
 use crate::manual::{
     ManualPage, despawn_manual, manual_controls, reset_manual_page, sync_manual_page,
 };
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
+use crate::minigames::{despawn_minigame_window, run_active_minigame, spawn_minigame_window};
+use crate::mission_complete::{
+    despawn_mission_complete, mission_complete_action, spawn_mission_complete,
+};
 use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
@@ -45,6 +52,7 @@ use crate::options::{
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
+use crate::portal::{enter_portal, reset_portal};
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
@@ -114,6 +122,7 @@ fn main() {
                 start_music,
                 reset_mission_timer,
                 reset_manual_page,
+                reset_portal,
             ),
         )
         // The character is driven the same way on the launch pad as in the
@@ -158,9 +167,23 @@ fn main() {
             Update,
             tick_countdown.run_if(in_state(PlayingState::Running)),
         )
+        .add_systems(Update, enter_portal.run_if(in_state(PlayingState::Running)))
+        .add_systems(
+            Update,
+            react_to_minigame_result.run_if(in_state(PlayingState::Running)),
+        )
         .add_systems(
             OnExit(GameState::Playing),
             (despawn_game, stop_music, reset_camera),
+        )
+        .add_systems(OnEnter(PlayingState::Minigame), (spawn_minigame_window, pause_physics))
+        .add_systems(
+            Update,
+            run_active_minigame.run_if(in_state(PlayingState::Minigame)),
+        )
+        .add_systems(
+            OnExit(PlayingState::Minigame),
+            (despawn_minigame_window, resume_physics),
         )
         .add_systems(
             OnEnter(PlayingState::ConfirmQuit),
@@ -188,6 +211,18 @@ fn main() {
         .add_systems(
             OnExit(PlayingState::GameOver),
             (despawn_game_over, resume_physics),
+        )
+        .add_systems(
+            OnEnter(PlayingState::MissionComplete),
+            (spawn_mission_complete, pause_physics),
+        )
+        .add_systems(
+            Update,
+            mission_complete_action.run_if(in_state(PlayingState::MissionComplete)),
+        )
+        .add_systems(
+            OnExit(PlayingState::MissionComplete),
+            (despawn_mission_complete, resume_physics),
         )
         .add_systems(Update, (button_visuals, sync_ui_scale, apply_music_volume))
         .run();

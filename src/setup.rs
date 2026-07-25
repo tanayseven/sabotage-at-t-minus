@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::level::{Level, LevelEntity};
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
+use crate::portal::spawn_portal;
 use crate::props::spawn_props;
 use crate::tiles::load_tiles;
 use crate::ui::spawn_hud;
@@ -13,17 +14,28 @@ use crate::ui::spawn_hud;
 #[derive(Component, Clone)]
 pub struct GameEntity;
 
-pub fn setup(mut commands: Commands, assets: Res<AssetServer>, level: Res<Level>) {
-    build_level(&mut commands, &assets, *level);
+pub fn setup(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
+    level: Res<Level>,
+) {
+    build_level(&mut commands, &assets, &mut images, *level);
     spawn_hud(&mut commands);
 }
 
 /// Everything belonging to one level, built from that level's own layout.
-pub fn build_level(commands: &mut Commands, assets: &AssetServer, level: Level) {
+pub fn build_level(
+    commands: &mut Commands,
+    assets: &AssetServer,
+    images: &mut Assets<Image>,
+    level: Level,
+) {
     let tiles = load_tiles(assets);
 
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
+    spawn_portal(commands, images, level, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
 }
 
