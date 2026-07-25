@@ -7,7 +7,7 @@
 use bevy::prelude::*;
 
 use crate::config::{DESIGN_HEIGHT, FOLLOW_ZOOM, PLATFORM_HEIGHT};
-use crate::minigames::{CompletedMinigame, MinigameId, MinigameOutcome};
+use crate::minigames::{CompletedMinigame, MinigameConfig, MinigameId, MinigameOutcome};
 use crate::platform::Platform;
 use crate::state::PlayingState;
 
@@ -160,6 +160,15 @@ impl Level {
         }
     }
 
+    pub fn minigame(self) -> MinigameConfig {
+        match self {
+            Level::Ascent => MinigameConfig {
+                id: MinigameId::TapChallenge,
+                time_limit_seconds: 8.0,
+            },
+        }
+    }
+
     pub fn portal_anchor(self) -> Vec2 {
         match self {
             Level::Ascent => {
@@ -211,7 +220,8 @@ pub fn react_to_minigame_result(
         (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::Success) => {
             next_playing.set(PlayingState::MissionComplete);
         }
-        (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::Failure) => {
+        (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::Failure)
+        | (Level::Ascent, MinigameId::TapChallenge, MinigameOutcome::TimedOut) => {
             next_playing.set(PlayingState::GameOver);
         }
     }
@@ -226,6 +236,7 @@ mod tests {
         PORTAL_AHEAD, PORTAL_CAMERA_INSET,
     };
     use crate::config::PLAYER_HEIGHT;
+    use crate::minigames::MinigameId;
 
     #[test]
     fn a_run_opens_on_the_ascent() {
@@ -342,5 +353,13 @@ mod tests {
         let portal = Level::Ascent.portal_anchor();
 
         assert!(portal.x <= 2100.0 - PORTAL_CAMERA_INSET);
+    }
+
+    #[test]
+    fn the_ascent_minigame_timeout_is_defined_by_the_level() {
+        let config = Level::Ascent.minigame();
+
+        assert_eq!(config.id, MinigameId::TapChallenge);
+        assert_eq!(config.time_limit_seconds, 8.0);
     }
 }

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::level::Level;
-use crate::minigames::{MinigameId, queue_minigame};
+use crate::minigames::queue_minigame;
 use crate::player::Player;
 use crate::state::PlayingState;
 
@@ -51,6 +51,7 @@ pub fn spawn_portal(
 
 pub fn enter_portal(
     mut commands: Commands,
+    level: Res<Level>,
     mut portal_state: ResMut<PortalState>,
     players: Query<&Transform, With<Player>>,
     portals: Query<&Transform, With<Portal>>,
@@ -71,7 +72,7 @@ pub fn enter_portal(
 
     if entered {
         portal_state.used = true;
-        queue_minigame(&mut commands, MinigameId::TapChallenge);
+        queue_minigame(&mut commands, level.minigame());
         next_playing.set(PlayingState::Minigame);
     }
 }

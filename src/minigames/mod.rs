@@ -18,24 +18,33 @@ pub enum MinigameId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameOutcome {
     Success,
+    #[allow(dead_code)]
     Failure,
+    TimedOut,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MinigameConfig {
+    pub id: MinigameId,
+    pub time_limit_seconds: f32,
 }
 
 /// Common contract future minigames can implement.
 pub trait MinigameInstance: Send + Sync + 'static {
     fn title(&self) -> &'static str;
     fn instructions(&self) -> &'static str;
-    fn status(&self) -> String;
-    fn tick(&mut self, keys: &ButtonInput<KeyCode>, delta_seconds: f32) -> Option<MinigameOutcome>;
+    fn status(&self, remaining_seconds: f32) -> String;
+    fn tick(&mut self, keys: &ButtonInput<KeyCode>) -> Option<MinigameOutcome>;
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
-pub struct PendingMinigame(pub MinigameId);
+pub struct PendingMinigame(pub MinigameConfig);
 
 #[derive(Resource)]
 pub struct ActiveMinigame {
     pub id: MinigameId,
     pub game: Box<dyn MinigameInstance>,
+    pub remaining_seconds: f32,
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -56,8 +65,8 @@ struct MinigameInstructions;
 #[derive(Component)]
 pub struct MinigameStatus;
 
-pub fn queue_minigame(commands: &mut Commands, id: MinigameId) {
-    commands.insert_resource(PendingMinigame(id));
+pub fn queue_minigame(commands: &mut Commands, config: MinigameConfig) {
+    commands.insert_resource(PendingMinigame(config));
 }
 
 pub fn spawn_minigame_window(
@@ -71,13 +80,18 @@ pub fn spawn_minigame_window(
         return;
     };
 
-    let id = pending.0;
+    let config = pending.0;
+    let id = config.id;
     let game = new_minigame(id);
     let title = game.title();
     let instructions = game.instructions();
-    let status = game.status();
+    let status = game.status(config.time_limit_seconds);
 
-    commands.insert_resource(ActiveMinigame { id, game });
+    commands.insert_resource(ActiveMinigame {
+        id,
+        game,
+        remaining_seconds: config.time_limit_seconds,
+    });
     commands.remove_resource::<PendingMinigame>();
 
     commands
@@ -155,7 +169,18 @@ pub fn run_active_minigame(
         return;
     };
 
-    if let Some(outcome) = active.game.tick(&keys, time.delta_secs()) {
+    active.remaining_seconds -= time.delta_secs();
+
+    if active.remaining_seconds <= 0.0 {
+        commands.insert_resource(CompletedMinigame {
+            id: active.id,
+            outcome: MinigameOutcome::TimedOut,
+        });
+        next_playing.set(PlayingState::Running);
+        return;
+    }
+
+    if let Some(outcome) = active.game.tick(&keys) {
         commands.insert_resource(CompletedMinigame {
             id: active.id,
             outcome,
@@ -164,7 +189,7 @@ pub fn run_active_minigame(
         return;
     }
 
-    let status = active.game.status();
+    let status = active.game.status(active.remaining_seconds);
     for mut text in &mut status_labels {
         **text = status.clone();
     }
