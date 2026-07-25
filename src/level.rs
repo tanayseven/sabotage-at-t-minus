@@ -89,6 +89,24 @@ impl LevelProgress {
     pub fn all_portals_completed(&self) -> bool {
         self.completed_portals >= self.total_portals
     }
+
+    /// A level is solved when every obstacle type present on that level has
+    /// been solved: the panel challenge (if this level has it) and all portal
+    /// challenges (if any portals are present).
+    pub fn all_obstacles_completed(
+        &self,
+        level: Level,
+        panel_room: Room,
+        panel_solved: bool,
+    ) -> bool {
+        let panel_done = if level.rooms().contains(&panel_room) {
+            panel_solved
+        } else {
+            true
+        };
+
+        panel_done && self.all_portals_completed()
+    }
 }
 
 /// Top of the floor, shared by the rocket's bottom deck and the outside ground.
@@ -485,7 +503,6 @@ pub fn react_to_minigame_result(
     mut commands: Commands,
     completed: Option<Res<CompletedMinigame>>,
     mut progress: ResMut<LevelProgress>,
-    mut doors: Query<(&mut Door, &mut Sprite)>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Some(completed) = completed else {
@@ -494,14 +511,7 @@ pub fn react_to_minigame_result(
 
     match (completed.id, completed.outcome) {
         (_, MinigameOutcome::Success) => {
-            if progress.complete_portal() {
-                for (mut door, mut sprite) in &mut doors {
-                    if door.kind == crate::door::DoorKind::Airlock {
-                        door.locked = false;
-                        sprite.color = door.color();
-                    }
-                }
-            }
+            progress.complete_portal();
         }
         (_, MinigameOutcome::Failure) | (_, MinigameOutcome::TimedOut) => {
             next_playing.set(PlayingState::GameOver);
@@ -671,7 +681,7 @@ mod tests {
     mod crossing {
         use super::*;
         use crate::config::PIXELS_PER_METER;
-        use crate::door::{leave_through_airlock, use_doors};
+        use crate::door::{leave_through_airlock, sync_airlock_lock_state, use_doors};
         use crate::ladder::climb_ladder;
         use crate::panel::Panel;
         use crate::physics::configure_physics;
@@ -725,25 +735,28 @@ mod tests {
                 // seed so the crossing is run against a rocket with one in it
                 // rather than one where the pick happened to go elsewhere.
                 app.init_resource::<Panel>();
+                app.insert_resource(LevelProgress::new(Level::Rocket));
                 app.add_systems(
                     Startup,
                     |mut commands: Commands,
                      assets: Res<AssetServer>,
                      mut images: ResMut<Assets<Image>>,
-                     panel: Res<Panel>| {
+                     panel: Res<Panel>,
+                     progress: Res<LevelProgress>| {
                         build_level(
                             &mut commands,
                             &assets,
                             &mut images,
                             Level::Rocket,
                             *panel,
-                            LevelProgress::new(Level::Rocket),
+                            *progress,
                         );
                     },
                 );
                 app.add_systems(
                     Update,
                     (
+                        sync_airlock_lock_state,
                         move_player,
                         probe_ground,
                         climb_ladder,
@@ -900,6 +913,10 @@ mod tests {
                 "the run left the rocket before the airlock was worked"
             );
 
+            // The final airlock only opens after the level objective is solved.
+            run.app.world_mut().resource_mut::<Panel>().solved = true;
+            run.step(&[]);
+
             // And out. Working the airlock while standing in it is what ends the
             // level, so the walk and the press go in together.
             run.hold(&[E, D], 6);
@@ -924,5 +941,21 @@ mod tests {
 
         assert!(ground.centre.x - half_width < bounds.min.x);
         assert!(ground.centre.x + half_width > bounds.max.x);
+    }
+
+    #[test]
+    fn all_obstacles_require_panel_only_when_present() {
+        let rocket_progress = LevelProgress::new(Level::Rocket);
+        let rocket_room = Level::Rocket.rooms()[0];
+
+        assert!(!rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, false));
+        assert!(rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, true));
+
+        let ascent_progress = LevelProgress::new(Level::Ascent);
+        assert!(!ascent_progress.all_obstacles_completed(Level::Ascent, rocket_room, false));
+
+        let mut ascent_done = LevelProgress::new(Level::Ascent);
+        ascent_done.completed_portals = ascent_done.total_portals;
+        assert!(ascent_done.all_obstacles_completed(Level::Ascent, rocket_room, false));
     }
 }

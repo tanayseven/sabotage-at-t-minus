@@ -3,6 +3,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::countdown::spawn_countdown;
+use crate::level::{Level, LevelProgress};
 use crate::manual::ManualButton;
 use crate::panel::{Panel, spawn_panel_status};
 use crate::quit::QuitButton;
@@ -90,7 +91,7 @@ pub fn button_visuals(
     }
 }
 
-pub fn spawn_hud(commands: &mut Commands, panel: &Panel) {
+pub fn spawn_hud(commands: &mut Commands, level: Level, panel: &Panel, progress: &LevelProgress) {
     commands.spawn((
         GameEntity,
         Text::new(
@@ -127,7 +128,7 @@ pub fn spawn_hud(commands: &mut Commands, panel: &Panel) {
             // Under the clock, because it is read the same way: a glance, not a
             // look. It names the room the panel is in — finding it is not the
             // puzzle, and the clock is short.
-            spawn_panel_status(parent, panel, HUD_STATUS_FONT);
+            spawn_panel_status(parent, level, panel, progress, HUD_STATUS_FONT);
         });
 
     commands

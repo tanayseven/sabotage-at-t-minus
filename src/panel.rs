@@ -20,7 +20,7 @@
 use bevy::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH};
-use crate::level::{Level, ROOM_COUNT, Room};
+use crate::level::{Level, LevelProgress, ROOM_COUNT, Room};
 use crate::player::Player;
 use crate::ui::MUTED_TEXT;
 
@@ -152,8 +152,9 @@ impl Panel {
         format!("     {}", settings.join("     "))
     }
 
-    fn status(&self) -> String {
-        let state = if self.solved { "SOLVED" } else { "UNSOLVED" };
+    fn status(&self, level: Level, progress: &LevelProgress) -> String {
+        let solved = progress.all_obstacles_completed(level, self.room, self.solved);
+        let state = if solved { "SOLVED" } else { "UNSOLVED" };
 
         format!("Isolation panel · {} · {state}", self.room.label())
     }
@@ -407,10 +408,16 @@ pub fn light_panel(
 }
 
 /// Spawned as part of the HUD, so it lives and dies with the rest of the run.
-pub fn spawn_panel_status(parent: &mut ChildSpawnerCommands, panel: &Panel, font_size: f32) {
+pub fn spawn_panel_status(
+    parent: &mut ChildSpawnerCommands,
+    level: Level,
+    panel: &Panel,
+    progress: &LevelProgress,
+    font_size: f32,
+) {
     parent.spawn((
         PanelStatus,
-        Text::new(panel.status()),
+        Text::new(panel.status(level, progress)),
         TextFont {
             font_size: FontSize::Px(font_size),
             ..default()
@@ -419,13 +426,18 @@ pub fn spawn_panel_status(parent: &mut ChildSpawnerCommands, panel: &Panel, font
     ));
 }
 
-pub fn sync_panel_status(panel: Res<Panel>, mut labels: Query<&mut Text, With<PanelStatus>>) {
-    if !panel.is_changed() {
+pub fn sync_panel_status(
+    level: Res<Level>,
+    panel: Res<Panel>,
+    progress: Res<LevelProgress>,
+    mut labels: Query<&mut Text, With<PanelStatus>>,
+) {
+    if !level.is_changed() && !panel.is_changed() && !progress.is_changed() {
         return;
     }
 
     for mut text in &mut labels {
-        **text = panel.status();
+        **text = panel.status(*level, &progress);
     }
 }
 
