@@ -55,7 +55,7 @@ use crate::player_animation::animate_player;
 use crate::portal::{enter_portal, pulse_portal, reset_portal};
 use crate::quit::{despawn_quit_dialog, open_quit_dialog, quit_dialog_action, spawn_quit_dialog};
 use crate::settings::Settings;
-use crate::setup::{despawn_game, setup};
+use crate::setup::{apply_pending_level_transition, despawn_game, setup};
 use crate::splash::{animate_splash, despawn_splash, skip_splash, spawn_splash};
 use crate::state::{GameState, PlayingState};
 use crate::ui::{button_visuals, sync_ui_scale};
@@ -125,6 +125,7 @@ fn main() {
                 reset_portal,
             ),
         )
+        .add_systems(OnEnter(PlayingState::Running), apply_pending_level_transition)
         // The character is driven the same way on the launch pad as in the
         // level, so this is registered once for both rather than twice. Chained
         // because each step reads what the one before it wrote: the ray probe

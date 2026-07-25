@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
-use crate::state::GameState;
+use crate::level::{Level, PendingLevelAdvance};
+use crate::state::{GameState, PlayingState};
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
@@ -15,7 +16,13 @@ pub struct MissionCompleteScreen;
 #[derive(Component)]
 pub struct MissionCompleteButton;
 
-pub fn spawn_mission_complete(mut commands: Commands) {
+pub fn spawn_mission_complete(mut commands: Commands, level: Res<Level>) {
+    let button_label = if level.next().is_some() {
+        "Next Level"
+    } else {
+        "Back to Menu"
+    };
+
     commands
         .spawn((
             MissionCompleteScreen,
@@ -67,13 +74,7 @@ pub fn spawn_mission_complete(mut commands: Commands) {
                             ..default()
                         })
                         .with_children(|row| {
-                            spawn_button(
-                                row,
-                                "Back to Menu",
-                                MissionCompleteButton,
-                                DIALOG_BUTTON_SIZE,
-                                DIALOG_BUTTON_FONT,
-                            );
+                            spawn_button(row, button_label, MissionCompleteButton, DIALOG_BUTTON_SIZE, DIALOG_BUTTON_FONT);
                         });
                 });
         });
@@ -82,7 +83,10 @@ pub fn spawn_mission_complete(mut commands: Commands) {
 #[allow(clippy::type_complexity)]
 pub fn mission_complete_action(
     buttons: Query<&Interaction, (Changed<Interaction>, With<MissionCompleteButton>)>,
+    level: Res<Level>,
+    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
+    mut next_playing: ResMut<NextState<PlayingState>>,
     mut next_game: ResMut<NextState<GameState>>,
 ) {
     let clicked = buttons
@@ -90,7 +94,12 @@ pub fn mission_complete_action(
         .any(|interaction| *interaction == Interaction::Pressed);
 
     if clicked || keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Escape) {
-        next_game.set(GameState::Menu);
+        if let Some(next_level) = level.next() {
+            commands.insert_resource(PendingLevelAdvance(next_level));
+            next_playing.set(PlayingState::Running);
+        } else {
+            next_game.set(GameState::Menu);
+        }
     }
 }
 
