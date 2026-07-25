@@ -194,6 +194,16 @@ pub fn spawn_minigame_window(
                         TextColor(Color::srgb(0.2, 0.2, 0.2)),
                     ));
 
+                    window.spawn((
+                        MinigameStatus,
+                        Text::new(status),
+                        TextFont {
+                            font_size: FontSize::Px(28.0),
+                            ..default()
+                        },
+                        TextColor(Color::BLACK),
+                    ));
+
                     if id == MinigameId::BrokenWire {
                         let broken = load_pixel_art(&assets, WIRES_BROKEN_PATH);
                         let joint = load_pixel_art(&assets, WIRES_JOINT_PATH);
@@ -293,16 +303,6 @@ pub fn spawn_minigame_window(
                                     },
                                 ));
                             });
-                    } else {
-                        window.spawn((
-                            MinigameStatus,
-                            Text::new(status),
-                            TextFont {
-                                font_size: FontSize::Px(28.0),
-                                ..default()
-                            },
-                            TextColor(Color::BLACK),
-                        ));
                     }
                 });
         });
@@ -356,6 +356,11 @@ pub fn run_active_minigame(
             }
         }
         MinigameVisualState::BrokenWires(visual) => {
+            let status = active.game.status();
+            for mut text in &mut status_labels {
+                **text = status.clone();
+            }
+
             let base_left = (WIRES_CANVAS_WIDTH - WIRES_IMAGE_WIDTH) * 0.5;
             let base_right = base_left + WIRES_RIGHT_START;
             let split_offset = visual.separation * 0.5;
@@ -398,9 +403,9 @@ pub fn despawn_minigame_window(
     commands.remove_resource::<ActiveMinigame>();
 }
 
-fn new_minigame(_id: MinigameId) -> Box<dyn MinigameInstance> {
-    // match id {
-        // Sample: MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
-        Box::new(broken_wire::BrokenWire::new())
-    // }
+fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
+    match id {
+        MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
+        MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
+    }
 }
