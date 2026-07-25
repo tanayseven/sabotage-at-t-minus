@@ -5,7 +5,7 @@ use crate::settings::Settings;
 use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
 
-mod sequence_challenge;
+mod broken_wire;
 mod tap_challenge;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -27,7 +27,7 @@ const WIRES_CANVAS_HEIGHT: f32 = 170.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     TapChallenge,
-    SequenceChallenge,
+    BrokenWire,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub struct SequenceWireVisualState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MinigameVisualState {
     Text(String),
-    SequenceWires(SequenceWireVisualState),
+    BrokenWires(SequenceWireVisualState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,7 +194,7 @@ pub fn spawn_minigame_window(
                         TextColor(Color::srgb(0.2, 0.2, 0.2)),
                     ));
 
-                    if id == MinigameId::SequenceChallenge {
+                    if id == MinigameId::BrokenWire {
                         let broken = load_pixel_art(&assets, WIRES_BROKEN_PATH);
                         let joint = load_pixel_art(&assets, WIRES_JOINT_PATH);
                         let base_left = (WIRES_CANVAS_WIDTH - WIRES_IMAGE_WIDTH) * 0.5;
@@ -355,7 +355,7 @@ pub fn run_active_minigame(
                 **text = status.clone();
             }
         }
-        MinigameVisualState::SequenceWires(visual) => {
+        MinigameVisualState::BrokenWires(visual) => {
             let base_left = (WIRES_CANVAS_WIDTH - WIRES_IMAGE_WIDTH) * 0.5;
             let base_right = base_left + WIRES_RIGHT_START;
             let split_offset = visual.separation * 0.5;
@@ -401,6 +401,6 @@ pub fn despawn_minigame_window(
 fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
-        MinigameId::SequenceChallenge => Box::new(sequence_challenge::SequenceChallenge::new()),
+        MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
     }
 }

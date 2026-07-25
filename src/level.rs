@@ -344,7 +344,7 @@ const ASCENT_PORTALS: [Vec2; 3] = [
 
 const ASCENT_PORTAL_MINIGAMES: [MinigameId; 2] = [
     MinigameId::TapChallenge,
-    MinigameId::SequenceChallenge,
+    MinigameId::BrokenWire,
 ];
 
 const ASCENT_CONFIG: LevelConfig = LevelConfig {

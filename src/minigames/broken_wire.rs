@@ -5,37 +5,37 @@ use super::{
     SequenceWireVisualState,
 };
 
-const START_SEPARATION: f32 = 120.0;
-const MAX_SEPARATION: f32 = 240.0;
-const SPREAD_SPEED: f32 = 58.0;
-const PULL_PER_PRESS: f32 = 18.0;
-const CLOSE_ENOUGH_SEPARATION: f32 = 1.0;
+const START_SEPARATION: f32 = 170.0;
+const MAX_SEPARATION: f32 = 280.0;
+const SPREAD_SPEED: f32 = 82.0;
+const PULL_PER_PRESS: f32 = 14.0;
+const CLOSE_ENOUGH_SEPARATION: f32 = 0.5;
 const JOINT_HOLD_SECONDS: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy)]
-enum SequencePhase {
+enum BrokenWirePhase {
     Pulling,
     JointedArmingZap { remaining: f32 },
     Jointed { remaining: f32 },
 }
 
-pub struct SequenceChallenge {
+pub struct BrokenWire {
     separation: f32,
-    phase: SequencePhase,
+    phase: BrokenWirePhase,
 }
 
-impl SequenceChallenge {
+impl BrokenWire {
     pub fn new() -> Self {
         Self {
             separation: START_SEPARATION,
-            phase: SequencePhase::Pulling,
+            phase: BrokenWirePhase::Pulling,
         }
     }
 }
 
-impl MinigameInstance for SequenceChallenge {
+impl MinigameInstance for BrokenWire {
     fn title(&self) -> &'static str {
-        "Circuit Sequencer"
+        "Broken Wire"
     }
 
     fn instructions(&self) -> &'static str {
@@ -44,25 +44,25 @@ impl MinigameInstance for SequenceChallenge {
 
     fn status(&self) -> String {
         match self.phase {
-            SequencePhase::Pulling => "Pull the wires together!".to_string(),
-            SequencePhase::JointedArmingZap { .. } => "Wire joint stabilized.".to_string(),
-            SequencePhase::Jointed { .. } => "Wire joint stabilized.".to_string(),
+            BrokenWirePhase::Pulling => "Pull the wires together!".to_string(),
+            BrokenWirePhase::JointedArmingZap { .. } => "Wire joint stabilized.".to_string(),
+            BrokenWirePhase::Jointed { .. } => "Wire joint stabilized.".to_string(),
         }
     }
 
     fn visual_state(&self) -> MinigameVisualState {
-        MinigameVisualState::SequenceWires(SequenceWireVisualState {
+        MinigameVisualState::BrokenWires(SequenceWireVisualState {
             separation: self.separation,
             jointed: matches!(
                 self.phase,
-                SequencePhase::JointedArmingZap { .. } | SequencePhase::Jointed { .. }
+                BrokenWirePhase::JointedArmingZap { .. } | BrokenWirePhase::Jointed { .. }
             ),
         })
     }
 
     fn take_audio_cues(&mut self) -> Vec<MinigameAudioCue> {
-        if let SequencePhase::JointedArmingZap { remaining } = self.phase {
-            self.phase = SequencePhase::Jointed { remaining };
+        if let BrokenWirePhase::JointedArmingZap { remaining } = self.phase {
+            self.phase = BrokenWirePhase::Jointed { remaining };
             return vec![MinigameAudioCue::SequenceZap];
         }
 
@@ -71,7 +71,7 @@ impl MinigameInstance for SequenceChallenge {
 
     fn tick(&mut self, keys: &ButtonInput<KeyCode>, delta_seconds: f32) -> Option<MinigameOutcome> {
         match &mut self.phase {
-            SequencePhase::Pulling => {
+            BrokenWirePhase::Pulling => {
                 self.separation = (self.separation + SPREAD_SPEED * delta_seconds).min(MAX_SEPARATION);
 
                 let mut pulls = 0.0;
@@ -86,12 +86,12 @@ impl MinigameInstance for SequenceChallenge {
 
                 if self.separation <= CLOSE_ENOUGH_SEPARATION {
                     self.separation = 0.0;
-                    self.phase = SequencePhase::JointedArmingZap {
+                    self.phase = BrokenWirePhase::JointedArmingZap {
                         remaining: JOINT_HOLD_SECONDS,
                     };
                 }
             }
-            SequencePhase::JointedArmingZap { remaining } | SequencePhase::Jointed { remaining } => {
+            BrokenWirePhase::JointedArmingZap { remaining } | BrokenWirePhase::Jointed { remaining } => {
                 *remaining -= delta_seconds;
                 if *remaining <= 0.0 {
                     self.separation = 0.0;
