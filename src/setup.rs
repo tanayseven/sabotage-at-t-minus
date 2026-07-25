@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
 use crate::level::{Level, LevelEntity};
+use crate::panel::{Panel, spawn_panel};
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
 use crate::props::spawn_props;
@@ -16,19 +17,27 @@ use crate::wall::spawn_wall_run;
 #[derive(Component, Clone)]
 pub struct GameEntity;
 
-pub fn setup(mut commands: Commands, assets: Res<AssetServer>, level: Res<Level>) {
-    build_level(&mut commands, &assets, *level);
-    spawn_hud(&mut commands);
+pub fn setup(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    level: Res<Level>,
+    panel: Res<Panel>,
+) {
+    build_level(&mut commands, &assets, *level, &panel);
+    spawn_hud(&mut commands, &panel);
 }
 
-/// Everything belonging to one level, built from that level's own layout.
-pub fn build_level(commands: &mut Commands, assets: &AssetServer, level: Level) {
+/// Everything belonging to one level, built from that level's own layout. The
+/// panel is passed in rather than read here because it is not part of a layout:
+/// which room it is in is decided fresh for each run.
+pub fn build_level(commands: &mut Commands, assets: &AssetServer, level: Level, panel: &Panel) {
     let tiles = load_tiles(assets);
 
     spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
     spawn_ladders(commands, assets, level.ladders(), LevelEntity);
     spawn_doors(commands, level.doors(), LevelEntity);
+    spawn_panel(commands, panel, level, LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
 }

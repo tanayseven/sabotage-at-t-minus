@@ -71,7 +71,7 @@ struct Page {
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 5] = [
+const PAGES: [Page; 6] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -82,6 +82,19 @@ const PAGES: [Page; 5] = [
             "",
             "Turn pages with the arrow keys. Esc puts the manual away.",
             "The clock does not stop while you have your nose in it.",
+        ],
+    },
+    Page {
+        heading: "Isolation Panel",
+        lines: &[
+            "One room has had its isolation panel thrown out of true.",
+            "Which room changes with the shift roster — the readout under",
+            "the clock names it. Stand at a switch and press E to throw it.",
+            "",
+            "Three switches, three lamps. The lamps are wired to the set",
+            "and not one to a switch: they come up together or not at all.",
+            "",
+            "Lamps up, room signed off. There are eight settings in all.",
         ],
     },
     Page {
