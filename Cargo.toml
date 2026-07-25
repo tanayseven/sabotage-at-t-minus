@@ -50,6 +50,7 @@ bevy = { version = "0.19", default-features = false, features = [
   "vorbis",
 ] }
 bevy_rapier2d = "0.35"
+rand = "0.8"
 
 [features]
 # `cargo run --features dev` — hot-ish iteration: Bevy links dynamically so

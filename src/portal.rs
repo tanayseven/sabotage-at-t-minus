@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use std::time::{SystemTime, UNIX_EPOCH};
+use rand::Rng;
 
 use crate::level::Level;
 use crate::minigames::queue_minigame;
@@ -96,10 +96,8 @@ fn random_index(len: usize) -> usize {
         return 0;
     }
 
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos() as usize);
-    nanos % len
+    // Use the RNG crate instead of wall-clock modulo so initial picks are unbiased.
+    rand::thread_rng().gen_range(0..len)
 }
 
 pub fn pulse_portal(time: Res<Time>, mut portals: Query<&mut Transform, With<PortalPulse>>) {
