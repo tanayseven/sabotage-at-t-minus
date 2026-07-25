@@ -107,7 +107,7 @@ const PAGES: [Page; 4] = [
         ],
     },
     Page {
-        heading: "1. Broken Wire Notes",
+        heading: "1. Damaged Signal Relay Notes",
         lines: &[
             "Fault: a snapped pair feeding the ignition run.",
             "",

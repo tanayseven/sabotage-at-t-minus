@@ -35,7 +35,7 @@ impl BrokenWire {
 
 impl MinigameInstance for BrokenWire {
     fn title(&self) -> &'static str {
-        "Portal Challenge"
+        "Damaged Signal Relay"
     }
 
     fn instructions(&self) -> &'static str {
