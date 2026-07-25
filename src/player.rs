@@ -8,8 +8,6 @@ use crate::config::{
 };
 use crate::player_animation::PlayerAnimation;
 
-/// Where the player drops in at the start of a level run.
-pub const SPAWN_POSITION: Vec2 = Vec2::new(-380.0, 260.0);
 const GROUND_PROBE_LENGTH: f32 = PLAYER_HEIGHT / 2.0 + GROUND_PROBE;
 
 #[derive(Component)]
