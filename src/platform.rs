@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::config::PLATFORM_HEIGHT;
-use crate::setup::GameEntity;
 use crate::tiles::{Axis, TileRun, TileSet};
 
 const PLATFORM_Z: f32 = -1.0;
@@ -15,6 +14,19 @@ pub struct Platform {
 }
 
 impl Platform {
+    pub const fn new(x: f32, y: f32, width: f32) -> Self {
+        Self {
+            centre: Vec2::new(x, y),
+            width,
+        }
+    }
+
+    /// The surface the player stands on, which is what level layouts are
+    /// measured against rather than the centre the collider is built from.
+    pub const fn top(&self) -> f32 {
+        self.centre.y + PLATFORM_HEIGHT / 2.0
+    }
+
     pub fn spawn(&self, commands: &mut Commands, tiles: &TileSet, marker: impl Bundle + Clone) {
         commands.spawn((
             marker.clone(),
@@ -34,23 +46,13 @@ impl Platform {
     }
 }
 
-pub fn spawn_platforms(commands: &mut Commands, tiles: &TileSet) {
-    let platforms = [
-        Platform {
-            centre: Vec2::new(-380.0, -120.0),
-            width: 360.0,
-        },
-        Platform {
-            centre: Vec2::new(40.0, 60.0),
-            width: 300.0,
-        },
-        Platform {
-            centre: Vec2::new(430.0, -40.0),
-            width: 260.0,
-        },
-    ];
-
+pub fn spawn_platforms(
+    commands: &mut Commands,
+    tiles: &TileSet,
+    platforms: &[Platform],
+    marker: impl Bundle + Clone,
+) {
     for platform in platforms {
-        platform.spawn(commands, tiles, GameEntity);
+        platform.spawn(commands, tiles, marker.clone());
     }
 }

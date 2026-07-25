@@ -46,3 +46,10 @@ pub const URGENT_SECONDS: f32 = 10.0;
 
 pub const WALL_THICKNESS: f32 = 40.0;
 pub const PLATFORM_HEIGHT: f32 = 32.0;
+
+/// How far the camera zooms in on levels that track the player. Those levels
+/// are wider than the viewport, so the whole thing was never going to fit.
+pub const FOLLOW_ZOOM: f32 = 2.0;
+/// Exponential decay rate for the tracking camera, per second. High enough to
+/// stay glued to a sprint, low enough to smooth out landings.
+pub const CAMERA_DECAY: f32 = 14.0;
