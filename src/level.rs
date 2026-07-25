@@ -186,7 +186,104 @@ const ROCKET_CONFIG: LevelConfig = LevelConfig {
 };
 
 // ---------------------------------------------------------------------------
-// Ascent level
+// The rooms themselves
+// ---------------------------------------------------------------------------
+
+/// Which side of the bulkhead a room is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Port,
+    Starboard,
+}
+
+impl Side {
+    const fn hull(self) -> f32 {
+        match self {
+            Side::Port => HULL_LEFT,
+            Side::Starboard => HULL_RIGHT,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Side::Port => "port",
+            Side::Starboard => "starboard",
+        }
+    }
+}
+
+/// How many decks the rocket has, and how many rooms the bulkhead cuts each of
+/// them into.
+const DECK_COUNT: usize = 3;
+const ROOMS_PER_DECK: usize = 2;
+/// Every room in the rocket, which is what anything picking one at random works
+/// against.
+pub const ROOM_COUNT: usize = DECK_COUNT * ROOMS_PER_DECK;
+
+/// One of the rocket's six rooms: the stretch of a deck on one side of the
+/// bulkhead. Described by which deck and which side rather than by its corners,
+/// because that is what a room *is* here — the plates, the hull and the
+/// bulkhead already say where the walls are, and a second copy of those numbers
+/// would only be one to keep in step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    /// 0 is the deck the player is dropped onto, 2 the one the airlock is on.
+    pub deck: usize,
+    pub side: Side,
+}
+
+/// How far along a room, from the bulkhead toward the hull, a fixture is
+/// mounted. Deliberately not the middle: a ladder comes up at 400 units out and
+/// a doorway is worked from as far as a crate's width back from the bulkhead,
+/// so the middle of the room is the one place a fixture would be in the way of
+/// both. `a_panel_is_clear_of_everything_else_in_its_room` holds this.
+const FIXTURE_ALONG_ROOM: f32 = 0.45;
+
+impl Room {
+    /// The `index`th room, counting up the rocket a deck at a time. What makes
+    /// a room pickable with a single number.
+    pub const fn from_index(index: usize) -> Self {
+        Self {
+            deck: index / ROOMS_PER_DECK,
+            side: if index.is_multiple_of(ROOMS_PER_DECK) {
+                Side::Port
+            } else {
+                Side::Starboard
+            },
+        }
+    }
+
+    /// The deck plate the room is floored with — the surface walked on.
+    pub const fn floor(self) -> f32 {
+        DECK_0 + self.deck as f32 * DECK_HEIGHT
+    }
+
+    /// Where a wall fixture is mounted in this room, given as the point on the
+    /// floor it stands on, so what is hung there decides its own height.
+    pub const fn fixture(self) -> Vec2 {
+        Vec2::new(
+            BULKHEAD_X + (self.side.hull() - BULKHEAD_X) * FIXTURE_ALONG_ROOM,
+            self.floor(),
+        )
+    }
+
+    /// How the room is named in anything the player reads.
+    pub fn label(self) -> String {
+        format!("deck {}, {}", self.deck, self.side.name())
+    }
+}
+
+const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
+    Room::from_index(0),
+    Room::from_index(1),
+    Room::from_index(2),
+    Room::from_index(3),
+    Room::from_index(4),
+    Room::from_index(5),
+];
+
+// ---------------------------------------------------------------------------
+// The ascent
 // ---------------------------------------------------------------------------
 
 const ASCENT_PLATFORMS: [Platform; 13] = [
@@ -335,6 +432,16 @@ impl Level {
         self.config().doors
     }
 
+    /// The rooms the level is divided into. Only the rocket has any: the ascent
+    /// is open ground, with nothing to be inside of.
+    pub fn rooms(self) -> &'static [Room] {
+        match self {
+            Level::Rocket => &ROCKET_ROOMS,
+            Level::Ascent => &[],
+            Level::UpperDeck => &[],
+        }
+    }
+
     pub fn crates(self) -> &'static [Vec2] {
         self.config().crates
     }
@@ -406,8 +513,15 @@ pub fn react_to_minigame_result(
 
 #[cfg(test)]
 mod tests {
-    use super::{CameraMode, Level};
-    use crate::config::PLAYER_HEIGHT;
+    use bevy::ecs::schedule::IntoScheduleConfigs;
+    use bevy::prelude::*;
+
+    use super::{
+        AIRLOCK, ASCENT_PLATFORMS, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door,
+        FOLLOW_ZOOM, GROUND_TOP, LADDER_GAP, Level, LevelProgress, LOWER_LADDER_X,
+        PLATFORM_HEIGHT, UPPER_LADDER_X,
+    };
+    use crate::config::{PLAYER_HEIGHT, VIEW_HEIGHT};
 
     #[test]
     fn a_run_opens_inside_the_rocket() {
@@ -481,8 +595,334 @@ mod tests {
     }
 
     #[test]
-    fn upper_deck_spawn_stays_on_the_left_side() {
-        assert!(Level::UpperDeck.player_spawn().x < 0.0);
-        assert!(Level::UpperDeck.player_spawn().y < PLAYER_HEIGHT);
+    fn the_ascent_tracks_the_player() {
+        assert!(matches!(
+            Level::Ascent.camera(),
+            CameraMode::Follow { zoom, .. } if zoom > 1.0
+        ));
+    }
+
+    /// Every ledge of the ascent has to be reachable from the one before it, or
+    /// the run dead-ends part way along.
+    #[test]
+    fn the_ascent_can_be_climbed() {
+        use crate::config::{GRAVITY, JUMP_SPEED, PLAYER_SPEED};
+
+        let rise = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
+        let reach = PLAYER_SPEED * 2.0 * JUMP_SPEED / GRAVITY;
+
+        // Skipping the ground, which every ledge sits above rather than after.
+        for pair in ASCENT_PLATFORMS[1..].windows(2) {
+            let (from, to) = (&pair[0], &pair[1]);
+            let gap = (to.centre.x - to.width / 2.0) - (from.centre.x + from.width / 2.0);
+
+            assert!(
+                to.top() - from.top() <= rise,
+                "unreachable rise onto {to:?}"
+            );
+            assert!(gap <= reach, "unjumpable gap before {to:?}");
+        }
+    }
+
+    /// The lesson the first draft of this level taught: at [`FOLLOW_ZOOM`] the
+    /// camera sits on the floor of the level while the player is on the ground,
+    /// so a ledge much above it is simply not on screen. The long run has to
+    /// stay under that line or the player runs through an empty frame.
+    #[test]
+    fn the_long_run_is_visible_from_the_ground() {
+        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
+            panic!("the ascent is meant to use a following camera");
+        };
+        // The narrowest the viewport ever gets vertically, and so the least
+        // that is ever on screen.
+        let half_view = VIEW_HEIGHT / FOLLOW_ZOOM / 2.0;
+        let camera_y = (GROUND_TOP + PLAYER_HEIGHT / 2.0)
+            .clamp(bounds.min.y + half_view, bounds.max.y - half_view);
+        let top_of_screen = camera_y + half_view;
+
+        let long_run = &ASCENT_PLATFORMS[1..=8];
+        for ledge in long_run {
+            assert!(
+                ledge.top() <= top_of_screen,
+                "{ledge:?} is off the top of the screen"
+            );
+        }
+    }
+
+    /// What wedged the player against the first ledge on the first play-through:
+    /// a ledge slung low enough that its underside catches someone running along
+    /// the floor. Every ledge has to clear a standing player.
+    #[test]
+    fn nothing_in_the_ascent_hangs_low_enough_to_snag_on() {
+        for ledge in &ASCENT_PLATFORMS[1..] {
+            let underside = ledge.top() - PLATFORM_HEIGHT;
+            let head = GROUND_TOP + PLAYER_HEIGHT;
+
+            assert!(underside >= head, "{ledge:?} hangs into head height");
+        }
+    }
+
+    /// Drives a whole run through the rocket with scripted input, against the
+    /// real level: [`build_level`] puts up the same walls, plates, ladders,
+    /// doors and crates a player gets, and the same systems move the character
+    /// through them. What it is really for is the joins — a door that opens onto
+    /// a ladder that comes up in a room whose door is out of reach is a run that
+    /// dead-ends, and every piece of that passes its own test on its own.
+    mod crossing {
+        use super::*;
+        use crate::config::PIXELS_PER_METER;
+        use crate::door::{leave_through_airlock, use_doors};
+        use crate::ladder::climb_ladder;
+        use crate::panel::Panel;
+        use crate::physics::configure_physics;
+        use crate::player::{Player, jump, move_player, probe_ground};
+        use crate::setup::build_level;
+        use crate::state::{GameState, PlayingState};
+        use bevy::asset::AssetPlugin;
+        use bevy_rapier2d::prelude::*;
+        use std::time::Duration;
+
+        const STEP: f32 = 1.0 / 60.0;
+        const A: KeyCode = KeyCode::KeyA;
+        const D: KeyCode = KeyCode::KeyD;
+        const E: KeyCode = KeyCode::KeyE;
+        const W: KeyCode = KeyCode::KeyW;
+
+        /// Where a player standing on a deck has their centre.
+        fn standing_on(deck: f32) -> f32 {
+            deck + PLAYER_HEIGHT / 2.0
+        }
+
+        struct Run {
+            app: App,
+            player: Entity,
+        }
+
+        impl Run {
+            fn start() -> Self {
+                let mut app = App::new();
+                app.add_plugins((
+                    MinimalPlugins,
+                    AssetPlugin::default(),
+                    TransformPlugin,
+                    RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
+                    bevy::state::app::StatesPlugin::default(),
+                ));
+                app.init_state::<GameState>();
+                app.add_sub_state::<PlayingState>();
+                app.insert_resource(TimestepMode::Fixed {
+                    dt: STEP,
+                    substeps: 1,
+                });
+                app.insert_resource(ButtonInput::<KeyCode>::default());
+                // The art is never rendered here, but the level still asks the
+                // asset server for it, and a handle cannot be handed out for a
+                // type the app has never heard of.
+                app.init_asset::<Image>();
+                app.init_resource::<Level>();
+                app.add_systems(Startup, configure_physics);
+                // The panel is built along with the rest of it, and pinned to a
+                // seed so the crossing is run against a rocket with one in it
+                // rather than one where the pick happened to go elsewhere.
+                app.init_resource::<Panel>();
+                app.add_systems(
+                    Startup,
+                    |mut commands: Commands,
+                     assets: Res<AssetServer>,
+                     mut images: ResMut<Assets<Image>>,
+                     panel: Res<Panel>| {
+                        build_level(
+                            &mut commands,
+                            &assets,
+                            &mut images,
+                            Level::Rocket,
+                            *panel,
+                            LevelProgress::new(Level::Rocket),
+                        );
+                    },
+                );
+                app.add_systems(
+                    Update,
+                    (
+                        move_player,
+                        probe_ground,
+                        climb_ladder,
+                        jump,
+                        use_doors,
+                        leave_through_airlock,
+                    )
+                        .chain(),
+                );
+                app.update();
+
+                let player = {
+                    let mut query = app.world_mut().query_filtered::<Entity, With<Player>>();
+                    query.iter(app.world()).next().expect("no player was built")
+                };
+
+                Self { app, player }
+            }
+
+            fn at(&self) -> Vec2 {
+                self.app
+                    .world()
+                    .entity(self.player)
+                    .get::<Transform>()
+                    .expect("the player lost its transform")
+                    .translation
+                    .truncate()
+            }
+
+            fn step(&mut self, held: &[KeyCode]) {
+                let mut keys = ButtonInput::<KeyCode>::default();
+                for key in held {
+                    keys.press(*key);
+                }
+                self.app.world_mut().insert_resource(keys);
+                self.app
+                    .world_mut()
+                    .resource_mut::<Time>()
+                    .advance_by(Duration::from_secs_f32(STEP));
+                self.app.update();
+            }
+
+            fn hold(&mut self, held: &[KeyCode], steps: usize) {
+                for _ in 0..steps {
+                    self.step(held);
+                }
+            }
+
+            /// Holds the keys until the player is where `arrived` wants them, or
+            /// gives up. Reported rather than asserted so the caller can say what
+            /// it was that never happened.
+            fn hold_until(
+                &mut self,
+                held: &[KeyCode],
+                budget: usize,
+                arrived: impl Fn(Vec2) -> bool,
+            ) -> bool {
+                for _ in 0..budget {
+                    self.step(held);
+                    if arrived(self.at()) {
+                        return true;
+                    }
+                }
+                false
+            }
+
+            /// Walks into a shut door and reports where it brought the player up.
+            fn shut_out_by_the_door(&mut self, key: KeyCode) -> Vec2 {
+                self.hold(&[key], 400);
+                self.at()
+            }
+
+            fn level(&self) -> Level {
+                *self.app.world().resource::<Level>()
+            }
+        }
+
+        /// A shut door has to do two things, and the second is the one that was
+        /// wrong: stop the player, and stop them somewhere they can still work it
+        /// from. How far back that is depends on what they pushed there ahead of
+        /// them, so it is asked of the door itself rather than measured against a
+        /// distance picked by hand.
+        fn assert_shut_out(at: Vec2, approaching: KeyCode, deck: f32, name: &str) {
+            let door = Door::bulkhead(BULKHEAD_X, deck);
+            let short_of_it = match approaching {
+                D => at.x < BULKHEAD_X,
+                _ => at.x > BULKHEAD_X,
+            };
+
+            assert!(short_of_it, "{name}: walked through a shut door to {at:?}");
+            assert!(
+                door.in_reach(at),
+                "{name}: brought up at {at:?}, too far off the door to work it"
+            );
+        }
+
+        #[test]
+        fn a_player_can_cross_the_rocket_from_the_drop_point_to_the_airlock() {
+            let mut run = Run::start();
+
+            // The bottom deck: walk out of the drop point into the bulkhead.
+            let at = run.shut_out_by_the_door(D);
+            assert_shut_out(at, D, DECK_0, "deck 0");
+
+            // Work it, carry on, and take the ladder up.
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                "deck 0's door never let the player through to the lower ladder (stuck at {:?})",
+                run.at()
+            );
+            assert!(
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_1) - 1.0),
+                "the lower ladder never reached deck 1"
+            );
+
+            // Off the ladder onto solid plate, then back across to deck 1's door.
+            assert!(
+                run.hold_until(&[A], 300, |at| at.x <= LOWER_LADDER_X - LADDER_GAP),
+                "never stepped off the lower ladder onto deck 1"
+            );
+            let at = run.shut_out_by_the_door(A);
+            assert_shut_out(at, A, DECK_1, "deck 1");
+
+            // Through it and up the second ladder.
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
+                "deck 1's door never let the player through to the upper ladder"
+            );
+            assert!(
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_2) - 1.0),
+                "the upper ladder never reached deck 2"
+            );
+
+            // Off it, across the top deck, and through the last bulkhead.
+            assert!(
+                run.hold_until(&[D], 300, |at| at.x >= UPPER_LADDER_X + LADDER_GAP),
+                "never stepped off the upper ladder onto deck 2"
+            );
+            let at = run.shut_out_by_the_door(D);
+            assert_shut_out(at, D, DECK_2, "deck 2");
+
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[D], 600, |at| AIRLOCK.in_reach(at)),
+                "deck 2's door never let the player within reach of the airlock (stuck at {:?})",
+                run.at()
+            );
+
+            assert_eq!(
+                run.level(),
+                Level::Rocket,
+                "the run left the rocket before the airlock was worked"
+            );
+
+            // And out. Working the airlock while standing in it is what ends the
+            // level, so the walk and the press go in together.
+            run.hold(&[E, D], 6);
+
+            assert_eq!(
+                run.level(),
+                Level::Ascent,
+                "the airlock did not put the run out onto the ascent"
+            );
+        }
+    }
+
+    /// The ascent has no side walls, so its ground has to reach past both edges
+    /// of the camera's travel or the player can walk off the end of the world.
+    #[test]
+    fn the_ascent_ground_runs_past_the_camera_bounds() {
+        let CameraMode::Follow { bounds, .. } = Level::Ascent.camera() else {
+            panic!("the ascent is meant to use a following camera");
+        };
+        let ground = &ASCENT_PLATFORMS[0];
+        let half_width = ground.width / 2.0;
+
+        assert!(ground.centre.x - half_width < bounds.min.x);
+        assert!(ground.centre.x + half_width > bounds.max.x);
     }
 }

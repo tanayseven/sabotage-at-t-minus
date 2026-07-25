@@ -13,6 +13,7 @@ mod minigames;
 mod mission_complete;
 mod music;
 mod options;
+mod panel;
 mod physics;
 mod platform;
 mod player;
@@ -53,6 +54,7 @@ use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
 };
+use crate::panel::{Panel, flip_switches, light_panel, reset_panel, sync_panel_status};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
@@ -91,6 +93,7 @@ fn main() {
         .init_resource::<Settings>()
         .init_resource::<MissionTimer>()
         .init_resource::<Level>()
+        .init_resource::<Panel>()
         .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)
@@ -122,7 +125,7 @@ fn main() {
         .add_systems(
             OnEnter(GameState::Playing),
             (
-                (reset_level, setup).chain(),
+                (reset_level, reset_panel, setup).chain(),
                 start_music,
                 reset_manual_page,
             ),
@@ -153,6 +156,16 @@ fn main() {
         .add_systems(
             Update,
             (use_doors, leave_through_airlock)
+                .chain()
+                .run_if(in_state(PlayingState::Running)),
+        )
+        // `E` throws a switch as well as working a door, and the panel is
+        // mounted where the two are never both in reach, so these can share the
+        // press without racing. Chained after the toggle so the lamps and the
+        // HUD show this frame's throw rather than last frame's.
+        .add_systems(
+            Update,
+            (flip_switches, light_panel, sync_panel_status)
                 .chain()
                 .run_if(in_state(PlayingState::Running)),
         )
