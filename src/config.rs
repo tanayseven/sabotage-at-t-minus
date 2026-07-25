@@ -11,6 +11,11 @@ pub const PLAYER_SPEED: f32 = 400.0;
 pub const JUMP_SPEED: f32 = 900.0;
 pub const GROUND_PROBE: f32 = 4.0;
 
+/// How fast the player goes up and down a ladder. Deliberately short of
+/// [`PLAYER_SPEED`]: a climb is the slow part of crossing the rocket, and the
+/// clock is what makes that a decision rather than a formality.
+pub const CLIMB_SPEED: f32 = 260.0;
+
 /// How tall the character stands on screen. The collider is the same height,
 /// so what you see is what you collide with.
 pub const PLAYER_HEIGHT: f32 = 64.0;
@@ -50,6 +55,10 @@ pub const PLATFORM_HEIGHT: f32 = 32.0;
 /// How far the camera zooms in on levels that track the player. Those levels
 /// are wider than the viewport, so the whole thing was never going to fit.
 pub const FOLLOW_ZOOM: f32 = 2.0;
+/// How far the camera zooms in inside the rocket. Gentler than [`FOLLOW_ZOOM`]:
+/// the decks are stacked close together, and pulling back this far is what keeps
+/// the deck above and the one below in frame while the player crosses a room.
+pub const INTERIOR_ZOOM: f32 = 1.4;
 /// Exponential decay rate for the tracking camera, per second. High enough to
 /// stay glued to a sprint, low enough to smooth out landings.
 pub const CAMERA_DECAY: f32 = 14.0;
