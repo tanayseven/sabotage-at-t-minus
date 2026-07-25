@@ -20,9 +20,15 @@ backend = "ubi:WebAssembly/binaryen"
 [tools."ubi:WebAssembly/binaryen"."platforms.linux-x64-binaryen-unittests"]
 checksum = "blake3:57299b7dbd20fe49fc5024404edca6395720ce213f0b57f7644dc1b4566b0a05"
 
+[tools."ubi:WebAssembly/binaryen"."platforms.macos-arm64-binaryen-unittests"]
+checksum = "blake3:787b1424756b83b77c9d6f4211131596e6de05b9095d45217b2e78a39e9f83a5"
+
 [[tools."ubi:itchio/butler"]]
 version = "15.29.0"
 backend = "ubi:itchio/butler"
 
 [tools."ubi:itchio/butler"."platforms.linux-x64-butler"]
 checksum = "blake3:1209cb71158eebb8800ebbcc9dd6580fe1126b8fe7b00e62e2e606a343f78b18"
+
+[tools."ubi:itchio/butler"."platforms.macos-arm64-butler"]
+checksum = "blake3:61cd962a2f82041e8c7511e72f6a8fa0d7b1b34193730704653fa459bbe1674b"
