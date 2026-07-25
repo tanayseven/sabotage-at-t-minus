@@ -11,3 +11,5 @@ mise.local.toml
 .idea/
 .vscode/
 .DS_Store
+
+.claude/
