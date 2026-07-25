@@ -7,11 +7,11 @@
 //! walking a route from memory.
 //!
 //! The LEDs are wired together rather than one to a switch: they all come on at
-//! once, and only when the whole set matches. That is the difference between a
-//! puzzle and a checklist — lighting each lamp as its own switch came good would
-//! let the combination be read off the panel one switch at a time. As it is the
-//! player has eight settings to work through, which is a job the mission clock
-//! leaves room for and not much more.
+//! once, and only when the whole set matches. Lighting each lamp as its own
+//! switch came good would let the combination be read off the panel itself,
+//! which is not where it is meant to be read from — the setting is printed in
+//! the repair manual, on the page the panel has to itself. Finding the room and
+//! reading the page is the job; the switches are just where it is signed off.
 //!
 //! Working the panel is the same press as working a door, and the panel is
 //! mounted far enough along the room that the two are never both in reach — see
@@ -132,6 +132,24 @@ impl Panel {
 
     fn matched(&self, switches: [bool; SWITCH_COUNT]) -> bool {
         switches == self.combination
+    }
+
+    /// The combination as the repair manual prints it: the setting each switch
+    /// is to be left in, numbered the way they are mounted, left to right.
+    ///
+    /// This is the whole reason the manual is worth opening. Without it the
+    /// panel is eight settings to be tried in turn against the clock, which is
+    /// busywork rather than a job — with it, the manual says what to do and the
+    /// run is the doing of it.
+    pub fn printed_settings(&self) -> String {
+        let settings: Vec<String> = self
+            .combination
+            .iter()
+            .enumerate()
+            .map(|(index, up)| format!("{}: {}", index + 1, if *up { "UP" } else { "DOWN" }))
+            .collect();
+
+        format!("     {}", settings.join("     "))
     }
 
     fn status(&self) -> String {
