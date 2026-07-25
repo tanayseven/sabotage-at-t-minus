@@ -80,7 +80,7 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 6] = [
+const PAGES: [Page; 4] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -107,7 +107,21 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "1. Coolant Line, Bay 2",
+        heading: "1. Broken Wire Notes",
+        lines: &[
+            "Fault: a snapped pair feeding the ignition run.",
+            "",
+            "Grip both loose ends and work them back together.",
+            "Tap A, then D, in quick alternation to pull them tight.",
+            "",
+            "If one hand leads too long, the gap widens again.",
+            "Keep an even rhythm until the crackle holds steady.",
+            "Then release and move on.",
+        ],
+    },
+    // TODO: Document as more minigames are added.
+    /* Page {
+        heading: "2. Coolant Line, Bay 2",
         lines: &[
             "Symptom: frost on the outer skin, pressure reading flat.",
             "",
@@ -120,7 +134,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "2. Gimbal Lock, Engine Mount",
+        heading: "3. Gimbal Lock, Engine Mount",
         lines: &[
             "Symptom: the nozzle will not swing; steering is dead.",
             "",
@@ -133,7 +147,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "3. Ignition Relay, Upper Deck",
+        heading: "4. Ignition Relay, Upper Deck",
         lines: &[
             "Symptom: the arming light stays dark on a good circuit.",
             "",
@@ -144,7 +158,7 @@ const PAGES: [Page; 6] = [
             "",
             "A flickering light means the relay is in but not home.",
         ],
-    },
+    }, */
     Page {
         heading: "Sign-Off",
         lines: &[

@@ -35,18 +35,18 @@ impl BrokenWire {
 
 impl MinigameInstance for BrokenWire {
     fn title(&self) -> &'static str {
-        "Broken Wire"
+        "Portal Challenge"
     }
 
     fn instructions(&self) -> &'static str {
-        "Mash A and D rapidly to pull the broken wires together."
+        "Consult the repair manual."
     }
 
     fn status(&self) -> String {
         match self.phase {
-            BrokenWirePhase::Pulling => "Pull the wires together!".to_string(),
-            BrokenWirePhase::JointedArmingZap { .. } => "Wire joint stabilized.".to_string(),
-            BrokenWirePhase::Jointed { .. } => "Wire joint stabilized.".to_string(),
+            BrokenWirePhase::Pulling => "Signal unstable.".to_string(),
+            BrokenWirePhase::JointedArmingZap { .. } => "Signal stabilizing.".to_string(),
+            BrokenWirePhase::Jointed { .. } => "Signal stabilized.".to_string(),
         }
     }
 
