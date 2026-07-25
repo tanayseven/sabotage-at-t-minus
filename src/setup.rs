@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 
 use crate::countdown::MissionTimer;
-use crate::level::{Level, LevelEntity, PendingLevelAdvance};
 use crate::manual::ManualPage;
+use crate::level::{Level, LevelEntity, PendingLevelAdvance};
+use crate::door::spawn_doors;
+use crate::ladder::spawn_ladders;
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
 use crate::portal::spawn_portal;
@@ -10,6 +12,7 @@ use crate::portal::PortalState;
 use crate::props::spawn_props;
 use crate::tiles::load_tiles;
 use crate::ui::spawn_hud;
+use crate::wall::spawn_wall_run;
 
 /// Marks the parts of a run that outlive the level it is on — the HUD. Quitting
 /// to the menu clears it without disturbing the camera and backdrop spawned at
@@ -43,7 +46,10 @@ pub fn build_level(
 ) {
     let tiles = load_tiles(assets);
 
+    spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
+    spawn_ladders(commands, assets, level.ladders(), LevelEntity);
+    spawn_doors(commands, level.doors(), LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
     spawn_portal(commands, images, level, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);

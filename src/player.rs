@@ -6,6 +6,7 @@ use crate::config::{
     GROUND_PROBE, JUMP_SPEED, PLAYER_ART_ANCHOR, PLAYER_FRAME_SIZE, PLAYER_HEIGHT, PLAYER_SPEED,
     PLAYER_WIDTH,
 };
+use crate::ladder::Climbing;
 use crate::player_animation::PlayerAnimation;
 
 const GROUND_PROBE_LENGTH: f32 = PLAYER_HEIGHT / 2.0 + GROUND_PROBE;
@@ -46,14 +47,19 @@ pub fn spawn_player(
 }
 
 /// The body the character is simulated as, kept apart from its art so the
-/// physics can be exercised on its own.
-fn physics_body() -> impl Bundle {
+/// physics can be exercised on its own — which the climb's tests do too, hence
+/// this being visible past the module.
+pub(crate) fn physics_body() -> impl Bundle {
     (
         RigidBody::Dynamic,
         Collider::cuboid(PLAYER_WIDTH / 2.0, PLAYER_HEIGHT / 2.0),
         LockedAxes::ROTATION_LOCKED,
         Velocity::zero(),
         Grounded::default(),
+        // Both belong to the climb: it switches gravity off for as long as the
+        // player has hold of a ladder, and puts it back when they let go.
+        Climbing::default(),
+        GravityScale(1.0),
         // Zero friction on its own is not enough: Rapier averages the two
         // colliders' coefficients by default, so a wall's own friction would
         // still hold the player up while they run into it. Taking the minimum
@@ -106,16 +112,20 @@ pub fn probe_ground(
     }
 }
 
+/// Runs after [`climb_ladder`](crate::ladder::climb_ladder), which is what lets
+/// W mean two things: on a ladder it is "climb", and the climb has already
+/// claimed the press by the time this sees it. Without that, standing at the
+/// foot of a ladder and reaching for it would jump instead.
 pub fn jump(
     keys: Res<ButtonInput<KeyCode>>,
-    mut players: Query<(&Grounded, &mut Velocity), With<Player>>,
+    mut players: Query<(&Grounded, &Climbing, &mut Velocity), With<Player>>,
 ) {
     if !keys.any_just_pressed([KeyCode::Space, KeyCode::KeyW]) {
         return;
     }
 
-    for (grounded, mut velocity) in &mut players {
-        if grounded.0 {
+    for (grounded, climbing, mut velocity) in &mut players {
+        if grounded.0 && !climbing.0 {
             velocity.linear.y = JUMP_SPEED;
         }
     }

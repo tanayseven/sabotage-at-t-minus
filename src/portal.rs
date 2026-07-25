@@ -33,7 +33,9 @@ pub fn spawn_portal(
     level: Level,
     marker: impl Bundle,
 ) {
-    let position = level.portal_anchor();
+    let Some(position) = level.portal_anchor() else {
+        return;
+    };
     let texture = red_circle_texture(images);
 
     commands.spawn((
@@ -71,8 +73,12 @@ pub fn enter_portal(
         .any(|portal| portal.translation.truncate().distance(player_pos) <= PORTAL_RADIUS);
 
     if entered {
+        let Some(minigame) = level.minigame() else {
+            return;
+        };
+
         portal_state.used = true;
-        queue_minigame(&mut commands, level.minigame());
+        queue_minigame(&mut commands, minigame);
         next_playing.set(PlayingState::Minigame);
     }
 }
