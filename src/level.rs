@@ -98,7 +98,7 @@ const ASCENT_CEILING: f32 = GROUND_TOP + 1400.0;
 /// them small — the run is meant to be a rhythm, not a series of pixel landings.
 const ASCENT_BAND_STEP: f32 = 360.0;
 const ASCENT_BAND_WIDTH: f32 = 330.0;
-const ASCENT_BAND_START: f32 = -1800.0;
+const ASCENT_BAND_START: f32 = -1600.0;
 
 /// One ledge of the long run, `index` steps along, `height` units above the
 /// ground. Heights roll up and down rather than climbing, so the camera drifts
@@ -112,8 +112,8 @@ const fn band(index: f32, height: f32) -> Platform {
 }
 
 /// Where the climb at the end of the run starts, past the last band ledge.
-const ASCENT_CLIMB_START: f32 = 1000.0;
-const ASCENT_CLIMB_STEP: Vec2 = Vec2::new(240.0, 130.0);
+const ASCENT_CLIMB_START: f32 = 1300.0;
+const ASCENT_CLIMB_STEP: Vec2 = Vec2::new(220.0, 130.0);
 const ASCENT_CLIMB_WIDTH: f32 = 220.0;
 
 /// One rung of that climb. Tighter and steeper than the band: 20 units of gap
@@ -126,29 +126,30 @@ const fn rung(index: f32) -> Platform {
     )
 }
 
-const ASCENT_PLATFORMS: [Platform; 14] = [
+const ASCENT_PLATFORMS: [Platform; 13] = [
     // With no side walls, the ground is the only thing between the player and
     // open air, so it runs well past the far edge of the camera's reach.
     Platform::with_top(0.0, GROUND_TOP, ASCENT_REACH * 2.0 + 400.0),
-    band(0.0, 130.0),
-    band(1.0, 250.0),
-    band(2.0, 180.0),
-    band(3.0, 300.0),
-    band(4.0, 210.0),
-    band(5.0, 330.0),
+    // The first ledge clears a player standing on the ground by a good margin.
+    // Lower, and running along the floor snags on its underside.
+    band(0.0, 180.0),
+    band(1.0, 280.0),
+    band(2.0, 210.0),
+    band(3.0, 320.0),
+    band(4.0, 240.0),
+    band(5.0, 350.0),
     band(6.0, 260.0),
     band(7.0, 360.0),
     rung(0.0),
     rung(1.0),
     rung(2.0),
     rung(3.0),
-    rung(4.0),
 ];
 
 const ASCENT_CRATES: [Vec2; 5] = [
-    Vec2::new(band(1.0, 250.0).centre.x, band(1.0, 250.0).top() + 120.0),
-    Vec2::new(band(3.0, 300.0).centre.x, band(3.0, 300.0).top() + 120.0),
-    Vec2::new(band(5.0, 330.0).centre.x, band(5.0, 330.0).top() + 120.0),
+    Vec2::new(band(1.0, 280.0).centre.x, band(1.0, 280.0).top() + 120.0),
+    Vec2::new(band(3.0, 320.0).centre.x, band(3.0, 320.0).top() + 120.0),
+    Vec2::new(band(5.0, 350.0).centre.x, band(5.0, 350.0).top() + 120.0),
     Vec2::new(band(7.0, 360.0).centre.x, band(7.0, 360.0).top() + 120.0),
     Vec2::new(rung(2.0).centre.x, rung(2.0).top() + 120.0),
 ];
@@ -185,7 +186,7 @@ impl Level {
     pub fn player_spawn(self) -> Vec2 {
         match self {
             Level::RocketBay => Vec2::new(-380.0, 260.0),
-            Level::Ascent => Vec2::new(ASCENT_BAND_START - 280.0, GROUND_TOP + 160.0),
+            Level::Ascent => Vec2::new(ASCENT_BAND_START - 450.0, GROUND_TOP + 60.0),
         }
     }
 
@@ -277,7 +278,10 @@ pub fn reach_exit(
 
 #[cfg(test)]
 mod tests {
-    use super::{ASCENT_PLATFORMS, CameraMode, FOLLOW_ZOOM, GROUND_TOP, Level, PLAYER_HEIGHT};
+    use super::{
+        ASCENT_PLATFORMS, CameraMode, FOLLOW_ZOOM, GROUND_TOP, Level, PLATFORM_HEIGHT,
+        PLAYER_HEIGHT,
+    };
 
     #[test]
     fn the_run_ends_after_the_ascent() {
@@ -361,6 +365,19 @@ mod tests {
                 ledge.top() <= top_of_screen,
                 "{ledge:?} is off the top of the screen"
             );
+        }
+    }
+
+    /// What wedged the player against the first ledge on the first play-through:
+    /// a ledge slung low enough that its underside catches someone running along
+    /// the floor. Every ledge has to clear a standing player.
+    #[test]
+    fn nothing_in_the_ascent_hangs_low_enough_to_snag_on() {
+        for ledge in &ASCENT_PLATFORMS[1..] {
+            let underside = ledge.top() - PLATFORM_HEIGHT;
+            let head = GROUND_TOP + PLAYER_HEIGHT;
+
+            assert!(underside >= head, "{ledge:?} hangs into head height");
         }
     }
 
