@@ -41,7 +41,7 @@ use bevy_rapier2d::prelude::*;
 use crate::camera::{apply_level_camera, follow_player, reset_camera, setup_camera};
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, tick_countdown};
-use crate::credits::{despawn_credits, spawn_credits};
+use crate::credits::{despawn_credits, open_credit_link_action, spawn_credits};
 use crate::difficulty_screen::{
     despawn_difficulty_screen, difficulty_screen_action, difficulty_step_action,
     spawn_difficulty_screen, sync_difficulty_readout,
@@ -66,7 +66,7 @@ use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
 };
-use crate::panel::{Panel, flip_switches, light_panel, sync_panel_status};
+use crate::panel::{Panels, flip_switches, light_panel, sync_panel_status};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
@@ -112,7 +112,7 @@ fn main() {
         .init_resource::<Settings>()
         .init_resource::<MissionTimer>()
         .init_resource::<Level>()
-        .init_resource::<Panel>()
+        .init_resource::<Panels>()
         .init_resource::<RocketPuzzles>()
         .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))
@@ -138,7 +138,10 @@ fn main() {
         )
         .add_systems(OnExit(GameState::Options), (despawn_options, stop_music))
         .add_systems(OnEnter(GameState::Credits), spawn_credits)
-        .add_systems(Update, back_to_menu.run_if(in_state(GameState::Credits)))
+        .add_systems(
+            Update,
+            (back_to_menu, open_credit_link_action).run_if(in_state(GameState::Credits)),
+        )
         .add_systems(OnExit(GameState::Credits), despawn_credits)
         .add_systems(OnEnter(GameState::Difficulty), spawn_difficulty_screen)
         .add_systems(

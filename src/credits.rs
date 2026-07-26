@@ -3,6 +3,24 @@ use bevy::text::LineBreak;
 
 use crate::ui::{ACCENT, BACKDROP, GameFont, MUTED_TEXT, spawn_back_button};
 
+/// Names in [`CREDITS`] that point somewhere further — their entry in the
+/// table doubles as a link, opened in the system browser when clicked, rather
+/// than just being read.
+const CREDIT_LINKS: &[(&str, &str)] = &[("BrainClaim", "https://freesound.org/people/BrainClaim/")];
+
+fn credit_link(name: &str) -> Option<&'static str> {
+    CREDIT_LINKS
+        .iter()
+        .find(|(linked_name, _)| *linked_name == name)
+        .map(|(_, url)| *url)
+}
+
+/// A credited name that is also a link. Carries the URL rather than reading
+/// it back off the label, so a name that happened to repeat elsewhere in the
+/// table could never be opened by mistake.
+#[derive(Component)]
+pub struct CreditLink(&'static str);
+
 /// Wide enough for the longest role and the longest name at their font sizes,
 /// so neither column wraps onto a second line.
 const ROLE_WIDTH: f32 = 320.0;
@@ -32,7 +50,7 @@ const CREDITS: [(&str, &[&str]); 3] = [
         ],
     ),
     ("Art", &["Kabir Siddharth"]),
-    ("Music", &["Param Siddharth"]),
+    ("Music", &["Param Siddharth", "BrainClaim"]),
 ];
 
 const COLOPHON: [&str; 2] = [
@@ -99,15 +117,23 @@ pub fn spawn_credits(mut commands: Commands, font: Res<GameFont>) {
                         });
                         spawn_column(row, NAME_WIDTH, AlignItems::Start, |cell| {
                             for name in names {
-                                cell.spawn((
+                                let text = (
                                     Text::new(*name),
                                     TextFont {
                                         font_size: FontSize::Px(NAME_FONT),
                                         ..default()
                                     },
                                     TextLayout::new(Justify::Left, LineBreak::NoWrap),
-                                    TextColor(Color::WHITE),
-                                ));
+                                );
+
+                                if let Some(url) = credit_link(name) {
+                                    // Tinted apart from the plain names beside
+                                    // it, so a name worth clicking reads as
+                                    // one before it is ever pressed.
+                                    cell.spawn((Button, CreditLink(url), text, TextColor(ACCENT)));
+                                } else {
+                                    cell.spawn((text, TextColor(Color::WHITE)));
+                                }
                             }
                         });
                     });
@@ -154,5 +180,18 @@ fn spawn_column(
 pub fn despawn_credits(mut commands: Commands, screen: Query<Entity, With<CreditsScreen>>) {
     for entity in &screen {
         commands.entity(entity).despawn();
+    }
+}
+
+/// Opens a clicked credit's link in the system browser. Failures are not this
+/// screen's to report — a player without one configured has nowhere for the
+/// error to usefully go — so they are only logged.
+pub fn open_credit_link_action(links: Query<(&Interaction, &CreditLink), Changed<Interaction>>) {
+    for (interaction, link) in &links {
+        if *interaction == Interaction::Pressed
+            && let Err(error) = webbrowser::open(link.0)
+        {
+            warn!("could not open {}: {error}", link.0);
+        }
     }
 }

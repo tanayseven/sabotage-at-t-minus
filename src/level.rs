@@ -93,22 +93,10 @@ impl LevelProgress {
         self.completed_portals >= self.total_portals
     }
 
-    /// The run is clear when every obstacle on the level has been worked: the
-    /// panel (if this level has it) and every breach.
-    pub fn all_obstacles_completed(
-        &self,
-        level: Level,
-        deck_count: usize,
-        panel_room: Room,
-        panel_solved: bool,
-    ) -> bool {
-        let panel_done = if level.has_room(deck_count, panel_room) {
-            panel_solved
-        } else {
-            true
-        };
-
-        panel_done && self.all_portals_completed()
+    /// The run is clear when every obstacle on the level has been worked: every
+    /// room's panel and every breach.
+    pub fn all_obstacles_completed(&self, all_panels_solved: bool) -> bool {
+        all_panels_solved && self.all_portals_completed()
     }
 }
 
@@ -315,12 +303,18 @@ pub struct Room {
     pub side: Side,
 }
 
-/// How far along a room, from the bulkhead toward the hull, a fixture is
+/// How far along a room, from the bulkhead toward the hull, its breach is
 /// mounted. Deliberately not the middle: a ladder comes up at 400 units out and
 /// a doorway is worked from as far as a crate's width back from the bulkhead,
 /// so the middle of the room is the one place a fixture would be in the way of
 /// both. `a_panel_is_clear_of_everything_else_in_its_room` holds this.
 const FIXTURE_ALONG_ROOM: f32 = 0.45;
+
+/// How far along a room its isolation panel is mounted — past the ladder,
+/// out toward the hull, so it never shares a stretch of wall with the breach
+/// on the same room's nearer side. Both fixtures can then be worked without
+/// one hiding the other.
+const PANEL_ALONG_ROOM: f32 = 0.85;
 
 /// How far along a room its code board is hung: back toward the bulkhead, so a
 /// player coming through the doorway reads it before they are past it, and well
@@ -440,20 +434,34 @@ impl Room {
         )
     }
 
-    /// The centre of a breach opened in this room, over the same clear stretch
-    /// of wall the panel is bolted to.
-    ///
-    /// Every room has a breach now, so one room has both — and they are drawn
-    /// on top of each other rather than side by side. That is deliberate: the
-    /// stretch of a room a player actually walks is short, hemmed in by the
-    /// doorway at one end and the ladder at the other, and a breach moved off
-    /// it to make space is a breach that can be strolled past. A cleared breach
-    /// despawns, so the room that draws both is worked breach first and panel
-    /// second, which is the order the lit switches want anyway.
+    /// The centre of a breach opened in this room — every room has one, over
+    /// the same clear stretch of wall a room's doorway leads straight to, so
+    /// the walk from the door to the ladder always meets it.
     pub const fn portal_mount(self) -> Vec2 {
         let at = self.fixture();
 
         Vec2::new(at.x, at.y + PORTAL_MOUNT_HEIGHT)
+    }
+
+    /// Where this room's isolation panel is mounted — on a different stretch
+    /// of wall from the breach so working one is never blocked by the other.
+    ///
+    /// The bottom deck's port room is the one exception: the airlock is set
+    /// into the hull on that side, and its reach — wide enough to cover a
+    /// player standing at it with a crate shoved up against them — leaves no
+    /// stretch of that room's wall clear on the far side of its breach that a
+    /// panel of any width can still fit. That one room's panel is mounted
+    /// alongside its breach instead, the way the single panel a run once dealt
+    /// always could, in any of the rocket's rooms.
+    pub const fn panel_mount(self) -> Vec2 {
+        if self.deck == 0 && matches!(self.side, Side::Port) {
+            return self.fixture();
+        }
+
+        Vec2::new(
+            BULKHEAD_X + (self.side.hull() - BULKHEAD_X) * PANEL_ALONG_ROOM,
+            self.floor(),
+        )
     }
 
     /// Where this room's code board hangs.
@@ -901,7 +909,7 @@ mod tests {
         use crate::config::PIXELS_PER_METER;
         use crate::door::{leave_through_airlock, sync_airlock_lock_state, use_doors};
         use crate::ladder::climb_ladder;
-        use crate::panel::Panel;
+        use crate::panel::Panels;
         use crate::physics::configure_physics;
         use crate::player::{Player, jump, move_player, probe_ground};
         use crate::portal::{Portal, enter_portal};
@@ -954,10 +962,10 @@ mod tests {
                 app.init_resource::<Level>();
                 app.init_resource::<Settings>();
                 app.add_systems(Startup, configure_physics);
-                // The panel is built along with the rest of it, and pinned to a
-                // seed so the crossing is run against a rocket with one in it
-                // rather than one where the pick happened to go elsewhere.
-                app.init_resource::<Panel>();
+                // The panels are built along with the rest of it, and pinned to
+                // a seed so the crossing is run against a rocket with them in
+                // it rather than one where the deal happened to go elsewhere.
+                app.insert_resource(Panels::from_seed(0, Level::Rocket, TEST_DECK_COUNT));
                 app.insert_resource(RocketPuzzles::from_seed(
                     0,
                     TEST_DECK_COUNT * ROOMS_PER_DECK,
@@ -968,7 +976,7 @@ mod tests {
                     Startup,
                     |mut commands: Commands,
                      assets: Res<AssetServer>,
-                     panel: Res<Panel>,
+                     panels: Res<Panels>,
                      puzzles: Res<RocketPuzzles>,
                      codes: Res<RoomCodes>,
                      progress: Res<LevelProgress>| {
@@ -980,7 +988,7 @@ mod tests {
                             &codes,
                             RunState {
                                 puzzles: puzzles.clone(),
-                                panel: *panel,
+                                panels: panels.clone(),
                                 progress: *progress,
                             },
                         );
@@ -1091,7 +1099,7 @@ mod tests {
             /// minigame overlays are not in this app, so the breaches walked
             /// into are booked in here.
             fn sign_off_the_repairs(&mut self) {
-                self.app.world_mut().resource_mut::<Panel>().solved = true;
+                self.app.world_mut().resource_mut::<Panels>().solve_all();
                 let mut progress = self.app.world_mut().resource_mut::<LevelProgress>();
                 progress.completed_portals = progress.total_portals;
             }
@@ -1254,42 +1262,21 @@ mod tests {
         }
     }
 
-    /// Every kind of job has to be done before the run is clear: the panel
+    /// Every kind of job has to be done before the run is clear: every panel
     /// *and* each breach.
     #[test]
-    fn all_obstacles_require_panel_only_when_present() {
+    fn all_obstacles_require_every_panel_and_every_breach() {
         let rocket_progress = LevelProgress::new(Level::Rocket, TEST_DECK_COUNT);
-        let rocket_room = Level::Rocket.rooms(TEST_DECK_COUNT)[0];
 
-        assert!(!rocket_progress.all_obstacles_completed(
-            Level::Rocket,
-            TEST_DECK_COUNT,
-            rocket_room,
-            false
-        ));
+        assert!(!rocket_progress.all_obstacles_completed(false));
         assert!(
-            !rocket_progress.all_obstacles_completed(
-                Level::Rocket,
-                TEST_DECK_COUNT,
-                rocket_room,
-                true
-            ),
-            "the panel alone opened the airlock with breaches still outstanding"
+            !rocket_progress.all_obstacles_completed(true),
+            "the panels alone opened the airlock with breaches still outstanding"
         );
 
         let mut rocket_done = LevelProgress::new(Level::Rocket, TEST_DECK_COUNT);
         rocket_done.completed_portals = rocket_done.total_portals;
-        assert!(!rocket_done.all_obstacles_completed(
-            Level::Rocket,
-            TEST_DECK_COUNT,
-            rocket_room,
-            false
-        ));
-        assert!(rocket_done.all_obstacles_completed(
-            Level::Rocket,
-            TEST_DECK_COUNT,
-            rocket_room,
-            true
-        ));
+        assert!(!rocket_done.all_obstacles_completed(false));
+        assert!(rocket_done.all_obstacles_completed(true));
     }
 }
