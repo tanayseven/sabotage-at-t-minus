@@ -5,7 +5,7 @@ use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
 use crate::level::{Level, LevelEntity, LevelProgress, RoomCodes};
 use crate::manual::ManualPage;
-use crate::panel::{Panel, spawn_panel};
+use crate::panel::{Panels, spawn_panels};
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
 use crate::portal::spawn_portals;
@@ -34,33 +34,18 @@ pub fn setup(
 ) {
     let deck_count = settings.difficulty.deck_count();
     let run = reset_run_state(&mut commands, *level, deck_count, &time);
-    build_level(
-        &mut commands,
-        &assets,
-        *level,
-        deck_count,
-        &codes,
-        run.clone(),
-    );
-    spawn_hud(
-        &mut commands,
-        &font,
-        &codes,
-        *level,
-        deck_count,
-        &run.panel,
-        &run.progress,
-    );
+    spawn_hud(&mut commands, &font, *level, &run.panels, &run.progress);
+    build_level(&mut commands, &assets, *level, deck_count, &codes, run);
 }
 
-/// What one level of a run is built from: where the puzzles are, what the panel
-/// wants, and how much of it is done. Not `Copy`: the puzzles' room-by-room
-/// deal is sized to the run's room count, so it is a `Vec` rather than a fixed
-/// array.
+/// What one level of a run is built from: which challenges are where, what
+/// every room's panel wants, and how much of it is done. Not `Copy`: the
+/// puzzles' room-by-room deal and every room's panel are sized to the run's
+/// room count, so they are `Vec`s rather than fixed arrays.
 #[derive(Clone)]
 pub struct RunState {
     pub puzzles: RocketPuzzles,
-    pub panel: Panel,
+    pub panels: Panels,
     pub progress: LevelProgress,
 }
 
@@ -75,20 +60,20 @@ fn reset_run_state(
 
     let room_count = deck_count * crate::level::ROOMS_PER_DECK;
 
-    // One seed for the whole deal, so the panel's room is drawn from the same
-    // hand as the breaches' and no two of them land in one room.
+    // One seed for the whole deal, so every run's challenges and every room's
+    // panel are drawn from the same hand.
     let seed = time.elapsed().as_nanos() as u64;
     let puzzles = RocketPuzzles::from_seed(seed, room_count);
-    let panel = Panel::from_seed(seed, room_count);
+    let panels = Panels::from_seed(seed, level, deck_count);
     let progress = LevelProgress::new(level, deck_count);
 
     commands.insert_resource(puzzles.clone());
-    commands.insert_resource(panel);
+    commands.insert_resource(panels.clone());
     commands.insert_resource(progress);
 
     RunState {
         puzzles,
-        panel,
+        panels,
         progress,
     }
 }
@@ -118,12 +103,10 @@ pub fn build_level(
         commands,
         &doors,
         LevelEntity,
-        level,
-        deck_count,
-        run.panel,
+        run.panels.all_solved(),
         run.progress,
     );
-    spawn_panel(commands, &run.panel, level, deck_count, LevelEntity);
+    spawn_panels(commands, &run.panels, level, deck_count, LevelEntity);
     spawn_props(commands, &crates, LevelEntity);
     spawn_portals(commands, assets, &run.puzzles, LevelEntity);
     spawn_room_signs(commands, codes, level, deck_count, LevelEntity);

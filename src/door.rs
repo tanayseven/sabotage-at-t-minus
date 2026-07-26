@@ -18,10 +18,9 @@ use bevy_rapier2d::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH, WALL_THICKNESS};
 use crate::level::{Level, LevelProgress};
-use crate::panel::Panel;
+use crate::panel::Panels;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
-use crate::settings::Settings;
 use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
@@ -145,17 +144,14 @@ pub fn spawn_doors(
     commands: &mut Commands,
     doors: &[Door],
     marker: impl Bundle + Clone,
-    level: Level,
-    deck_count: usize,
-    panel: Panel,
+    panels_solved: bool,
     progress: crate::level::LevelProgress,
 ) {
     for door in doors {
         let mut door = *door;
 
         if door.kind == DoorKind::Airlock {
-            door.locked =
-                !progress.all_obstacles_completed(level, deck_count, panel.room, panel.solved);
+            door.locked = !progress.all_obstacles_completed(panels_solved);
         }
 
         commands.spawn((
@@ -178,17 +174,15 @@ pub fn spawn_doors(
 /// signed off.
 pub fn sync_airlock_lock_state(
     level: Res<Level>,
-    settings: Res<Settings>,
-    panel: Res<Panel>,
+    panels: Res<Panels>,
     progress: Res<LevelProgress>,
     mut doors: Query<(&mut Door, &mut Sprite)>,
 ) {
-    if !level.is_changed() && !panel.is_changed() && !progress.is_changed() {
+    if !level.is_changed() && !panels.is_changed() && !progress.is_changed() {
         return;
     }
 
-    let deck_count = settings.difficulty.deck_count();
-    let locked = !progress.all_obstacles_completed(*level, deck_count, panel.room, panel.solved);
+    let locked = !progress.all_obstacles_completed(panels.all_solved());
 
     for (mut door, mut sprite) in &mut doors {
         if door.kind != DoorKind::Airlock {
@@ -292,8 +286,7 @@ mod tests {
     fn the_airlock_goes_green_once_every_job_is_signed_off() {
         let mut app = App::new();
         app.init_resource::<Level>();
-        app.init_resource::<Settings>();
-        app.init_resource::<Panel>();
+        app.insert_resource(Panels::from_seed(0, Level::Rocket, TEST_DECK_COUNT));
         app.insert_resource(LevelProgress::new(Level::Rocket, TEST_DECK_COUNT));
         app.add_systems(Update, sync_airlock_lock_state);
 
@@ -316,8 +309,8 @@ mod tests {
             "the airlock is green with the whole level still to work"
         );
 
-        // Sign off the panel and every breach.
-        app.world_mut().resource_mut::<Panel>().solved = true;
+        // Sign off every panel and every breach.
+        app.world_mut().resource_mut::<Panels>().solve_all();
         let mut progress = app.world_mut().resource_mut::<LevelProgress>();
         progress.completed_portals = progress.total_portals;
         app.update();
@@ -438,9 +431,7 @@ mod tests {
                 &mut commands,
                 &[BULKHEAD_DOOR],
                 (),
-                Level::Rocket,
-                TEST_DECK_COUNT,
-                Panel::default(),
+                false,
                 LevelProgress::new(Level::Rocket, TEST_DECK_COUNT),
             );
         });
@@ -527,9 +518,7 @@ mod tests {
                 &mut commands,
                 &Level::Rocket.doors(TEST_DECK_COUNT),
                 (),
-                Level::Rocket,
-                TEST_DECK_COUNT,
-                Panel::default(),
+                false,
                 LevelProgress::new(Level::Rocket, TEST_DECK_COUNT),
             );
         });

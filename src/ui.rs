@@ -3,9 +3,9 @@ use bevy::window::PrimaryWindow;
 
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::countdown::spawn_countdown;
-use crate::level::{Level, LevelProgress, RoomCodes};
+use crate::level::{Level, LevelProgress};
 use crate::manual::ManualButton;
-use crate::panel::{Panel, spawn_panel_status};
+use crate::panel::{Panels, spawn_panel_status};
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
@@ -130,14 +130,11 @@ pub fn button_visuals(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_hud(
     commands: &mut Commands,
     font: &GameFont,
-    codes: &RoomCodes,
     level: Level,
-    deck_count: usize,
-    panel: &Panel,
+    panels: &Panels,
     progress: &LevelProgress,
 ) {
     // The level names itself in the corner, the way the launch pad does.
@@ -196,17 +193,8 @@ pub fn spawn_hud(
         .with_children(|parent| {
             spawn_countdown(parent, HUD_COUNTDOWN_FONT);
             // Under the clock, because it is read the same way: a glance, not a
-            // look. It names the room the panel is in — finding it is not the
-            // puzzle, and the clock is short.
-            spawn_panel_status(
-                parent,
-                codes,
-                level,
-                deck_count,
-                panel,
-                progress,
-                HUD_STATUS_FONT,
-            );
+            // look.
+            spawn_panel_status(parent, panels, progress, HUD_STATUS_FONT);
         });
 
     commands

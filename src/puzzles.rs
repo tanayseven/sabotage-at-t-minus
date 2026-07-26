@@ -1,14 +1,14 @@
-//! Which room of the rocket each of the run's puzzles is installed in.
+//! Which challenge each of the rocket's rooms is dealt.
 //!
 //! Every room of the rocket has a breach in it, so there is a job wherever the
 //! player goes and the airlock waits on all of them. What is dealt fresh at the
-//! start of every run is which challenge each breach opens, and which room the
-//! isolation panel is bolted in — a player who has run the rocket before still
-//! has to read the manual and work what is in front of them rather than walking
-//! a route from memory.
+//! start of every run is which challenge each breach opens — a player who has
+//! run the rocket before still has to read the manual and work what is in
+//! front of them rather than walking a route from memory.
 //!
-//! The breach and the panel are mounted on different stretches of a room's
-//! wall, so the room that draws both can be worked rather than blocked.
+//! Every room also carries its own isolation panel — see
+//! [`crate::panel::Panels`] — mounted on a different stretch of wall from the
+//! breach, so the room that draws both can be worked rather than blocked.
 
 use bevy::prelude::*;
 
@@ -21,22 +21,14 @@ use crate::minigames::{MINIGAME_COUNT, MinigameId};
 /// the tightest a run ever gets.
 const _: () = assert!(MINIGAME_COUNT <= MIN_DECK_COUNT * ROOMS_PER_DECK);
 
-/// The rooms this run's puzzles are in: the panel's room, and which challenge
-/// each room's breach opens. A resource rather than a component because the
-/// answer is decided before the level is built and outlives the geometry built
-/// from it.
-///
-/// Every room gets a breach, so the deal is no longer about *which* rooms are
-/// worked — it is all of them — but about which challenge turns up where, and
-/// which room the panel is bolted in. The breach and the panel are mounted on
-/// different stretches of a room's wall, so the room that draws both is worked
-/// rather than blocked.
+/// Which challenge each room's breach opens this run. A resource rather than a
+/// component because the answer is decided before the level is built and
+/// outlives the geometry built from it.
 ///
 /// Sized to the run's room count rather than a fixed one, since how many decks
 /// the rocket has is picked per run.
 #[derive(Resource, Debug, Clone, PartialEq, Eq)]
 pub struct RocketPuzzles {
-    pub panel_room: Room,
     /// The challenge behind each room's breach, by room index.
     pub room_minigames: Vec<MinigameId>,
 }
@@ -60,7 +52,7 @@ pub const fn scramble(seed: u64) -> u64 {
 }
 
 impl RocketPuzzles {
-    /// Deals one run: the panel's room, and a challenge for every room.
+    /// Deals one run: a challenge for every room.
     ///
     /// The challenges are dealt round the rocket from a rolling start rather
     /// than drawn one room at a time. There are more rooms than kinds of
@@ -69,17 +61,13 @@ impl RocketPuzzles {
     /// rocket, and the rolling start is what stops two runs being the same.
     pub fn from_seed(seed: u64, room_count: usize) -> Self {
         let bits = scramble(seed);
-        let panel_room = Room::from_index((bits % room_count as u64) as usize);
 
         let first = (scramble(bits) % MINIGAME_COUNT as u64) as usize;
         let room_minigames: Vec<MinigameId> = (0..room_count)
             .map(|room| MinigameId::ALL[(first + room) % MINIGAME_COUNT])
             .collect();
 
-        Self {
-            panel_room,
-            room_minigames,
-        }
+        Self { room_minigames }
     }
 
     /// Where the run's breaches stand and which challenge each one opens: one
@@ -152,41 +140,53 @@ mod tests {
         }
     }
 
-    /// The room that draws the panel as well as a breach is worked breach
-    /// first: walking to the panel takes the player into the breach, and a
-    /// cleared breach despawns and leaves the panel behind it. What that needs
-    /// is for the breach to be on the panel's stretch of wall rather than
-    /// somewhere a player could reach the panel without meeting it.
+    /// Every room now carries both a panel and a breach, mounted on different
+    /// stretches of its wall — working one must never be blocked by standing
+    /// in the other.
+    ///
+    /// Except in the bottom deck's port room: see
+    /// [`crate::level::Room::panel_mount`] for why that one room's panel is
+    /// mounted alongside its breach instead.
     #[test]
-    fn the_breach_sharing_the_panel_s_room_is_met_on_the_way_to_it() {
+    fn every_room_s_panel_and_breach_stand_clear_of_each_other() {
         use crate::config::PLAYER_HEIGHT;
+        use crate::level::Side;
         use crate::portal::PORTAL_RADIUS;
 
         for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
+            if room.deck == 0 && room.side == Side::Port {
+                continue;
+            }
+
             let breach = room.portal_mount();
             // Where a player stood at the panel, ready to throw a switch, has
             // their centre.
-            let working_the_panel = Vec2::new(room.fixture().x, room.floor() + PLAYER_HEIGHT / 2.0);
+            let working_the_panel =
+                Vec2::new(room.panel_mount().x, room.floor() + PLAYER_HEIGHT / 2.0);
 
             assert!(
-                working_the_panel.distance(breach) < PORTAL_RADIUS,
-                "the panel in {} can be reached without meeting its breach",
+                working_the_panel.distance(breach) > PORTAL_RADIUS,
+                "the panel in {} cannot be worked without also standing in its breach",
                 room.label()
             );
         }
     }
 
-    /// Two runs a moment apart must not be the same run: the seed is the app's
-    /// uptime in nanoseconds.
+    /// There are only as many ways to rotate the challenges as there are kinds
+    /// of challenge, so the deal alone repeats far sooner than a run actually
+    /// does — keeping two nearby seeds from feeling like the same run is
+    /// [`crate::panel::Panels`]'s job, not this one's. What this deal still has
+    /// to do is use every rotation there is, rather than favouring one.
     #[test]
-    fn seeds_a_moment_apart_deal_different_runs() {
-        let seed = 1_234_567_890_u64;
-        let differ = (1..=8).filter(|step| {
-            RocketPuzzles::from_seed(seed + step, TEST_ROOM_COUNT)
-                != RocketPuzzles::from_seed(seed, TEST_ROOM_COUNT)
-        });
-
-        assert!(differ.count() >= 6, "the deal barely moves between seeds");
+    fn every_rotation_of_the_challenges_turns_up() {
+        for minigame in MinigameId::ALL {
+            assert!(
+                (0..64u64).any(|seed| RocketPuzzles::from_seed(seed, TEST_ROOM_COUNT)
+                    .room_minigames[0]
+                    == minigame),
+                "{minigame:?} never opens the first room"
+            );
+        }
     }
 }

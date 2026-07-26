@@ -66,7 +66,7 @@ use crate::music::{apply_music_volume, start_music, stop_music};
 use crate::options::{
     back_to_menu, despawn_options, spawn_options, sync_volume_widgets, volume_step_action,
 };
-use crate::panel::{Panel, flip_switches, light_panel, sync_panel_status};
+use crate::panel::{Panels, flip_switches, light_panel, sync_panel_status};
 use crate::physics::{configure_physics, pause_physics, resume_physics};
 use crate::player::{jump, move_player, probe_ground};
 use crate::player_animation::animate_player;
@@ -112,7 +112,7 @@ fn main() {
         .init_resource::<Settings>()
         .init_resource::<MissionTimer>()
         .init_resource::<Level>()
-        .init_resource::<Panel>()
+        .init_resource::<Panels>()
         .init_resource::<RocketPuzzles>()
         .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))

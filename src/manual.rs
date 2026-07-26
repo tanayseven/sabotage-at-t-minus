@@ -19,8 +19,8 @@ use bevy::prelude::*;
 use bevy::text::{LineBreak, LineHeight};
 
 use crate::difficulty::MAX_DECK_COUNT;
-use crate::level::{RoomCodes, deck_index_line};
-use crate::panel::Panel;
+use crate::level::{Room, RoomCodes, Side, deck_index_line};
+use crate::panel::Panels;
 use crate::settings::Settings;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
@@ -73,19 +73,15 @@ struct Page {
     lines: &'static [&'static str],
 }
 
-/// Stands in for the line the isolation panel's setting is printed on. The
-/// pages are constants and that one line is not — it is decided when the run
-/// starts — so it is left as a slot and filled in as the page is drawn.
-///
-/// A whole line rather than a hole in the middle of one, so the substitution
-/// cannot push a line of prose out past the width the page is set to.
-const SWITCH_SETTINGS: &str = "\u{0}settings";
+/// Stands in for the isolation panel page's settings, one line a deck, for
+/// the same reason [`ROOM_INDEX`] does: the settings belong to the run, are
+/// decided when it starts, and a page written out ahead of that could not
+/// carry them. Expands to one line per deck the run turns out to have.
+const PANEL_SETTINGS: &str = "\u{0}panel_settings";
 
 /// Stands in for the room index, one line per deck, for the same reason
-/// [`SWITCH_SETTINGS`] does: the codes belong to the rooms, and a second copy
-/// of them written out here would be one to keep in step. Expands to one line
-/// per deck the run turns out to have, so unlike `SWITCH_SETTINGS` it can grow
-/// past the single line it stands in for.
+/// [`PANEL_SETTINGS`] does: the codes belong to the rooms, and a second copy
+/// of them written out here would be one to keep in step.
 const ROOM_INDEX: &str = "\u{0}room_index";
 
 /// However many decks the widest difficulty deals, the page still has to have
@@ -101,8 +97,8 @@ const PAGES: [Page; 8] = [
         lines: &[
             "The rocket leaves at T-00:00 whether or not it is airworthy.",
             "Every room aboard was breached while the pad was clear, and",
-            "one panel was thrown out of true besides. Each kind of job",
-            "has a page. The airlock stays red until all of them are done.",
+            "every room's panel was thrown out of true besides. Each kind",
+            "of job has a page. The airlock stays red until all are done.",
             "",
             "Turn pages with the arrow keys. Esc puts the manual away.",
             "The clock does not stop while you have your nose in it.",
@@ -118,16 +114,12 @@ const PAGES: [Page; 8] = [
         ],
     },
     Page {
-        heading: "Isolation Panel",
+        heading: "Isolation Panels",
         lines: &[
-            "One room's isolation panel was thrown out of true. Which room",
-            "changes with the shift roster — the readout under the clock",
-            "names it. Stand at a switch and press E to throw it.",
+            "Every room's isolation panel was thrown out of true. Stand at",
+            "a switch and press E. Left to right, U for up, D for down:",
             "",
-            "Left to right, this shift's panel is to be left set:",
-            SWITCH_SETTINGS,
-            "",
-            "The three lamps are wired to the set: they come up together.",
+            PANEL_SETTINGS,
         ],
     },
     Page {
@@ -213,7 +205,8 @@ const PAGES: [Page; 8] = [
         heading: "Sign-Off",
         lines: &[
             "The airlock stays locked until every job is signed off:",
-            "  Isolation panel set, all three lamps up.",
+            "",
+            "  Every room's isolation panel set, its lamps lit.",
             "  Signal relay jointed, the crackle steady.",
             "  Coolant regulator sealed, the needle held in band.",
             "  Engine bell scrubbed out, no soot left in the bore.",
@@ -280,13 +273,13 @@ pub fn reset_manual_page(mut commands: Commands) {
     commands.insert_resource(ManualPage::default());
 }
 
-/// `switch_panel` is the isolation panel out in the level, not this one — the
-/// manual has a panel of its own, and one of the two had to give way.
+/// `switch_panels` are the isolation panels out in the level, not this one —
+/// the manual has a panel of its own, and one of the two had to give way.
 fn spawn_manual(
     commands: &mut Commands,
     codes: &RoomCodes,
     open: ManualPage,
-    switch_panel: &Panel,
+    switch_panels: &Panels,
     deck_count: usize,
 ) {
     commands
@@ -353,7 +346,7 @@ fn spawn_manual(
                             ));
                             body.spawn((
                                 ManualBody,
-                                Text::new(body_text(codes, open, switch_panel, deck_count)),
+                                Text::new(body_text(codes, open, switch_panels, deck_count)),
                                 TextFont {
                                     font_size: FontSize::Px(BODY_FONT),
                                     ..default()
@@ -421,15 +414,18 @@ fn spawn_manual(
         });
 }
 
-/// The open page's body, with the panel's setting and the room index printed
+/// The open page's body, with the panels' settings and the room index printed
 /// onto the lines the page leaves for them.
-fn body_text(codes: &RoomCodes, page: ManualPage, panel: &Panel, deck_count: usize) -> String {
+fn body_text(codes: &RoomCodes, page: ManualPage, panels: &Panels, deck_count: usize) -> String {
     page.page()
         .lines
         .iter()
         .map(|line| {
-            if *line == SWITCH_SETTINGS {
-                panel.printed_settings()
+            if *line == PANEL_SETTINGS {
+                (0..deck_count)
+                    .map(|deck| deck_panel_line(codes, panels, deck))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else if *line == ROOM_INDEX {
                 (0..deck_count)
                     .map(|deck| deck_index_line(codes, deck))
@@ -441,6 +437,28 @@ fn body_text(codes: &RoomCodes, page: ManualPage, panel: &Panel, deck_count: usi
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// One deck's worth of the isolation panel page: both its rooms, code first
+/// and their setting after — up, down, one letter a switch, left to right as
+/// they are mounted.
+fn deck_panel_line(codes: &RoomCodes, panels: &Panels, deck: usize) -> String {
+    let port = Room {
+        deck,
+        side: Side::Port,
+    };
+    let starboard = Room {
+        deck,
+        side: Side::Starboard,
+    };
+
+    format!(
+        "  #{} {:<14}#{} {}",
+        codes.of(port),
+        panels.of(port).printed_settings(),
+        codes.of(starboard),
+        panels.of(starboard).printed_settings(),
+    )
 }
 
 /// Opening, closing and paging, in one system because they share a keyboard:
@@ -458,7 +476,7 @@ pub fn manual_controls(
     mut commands: Commands,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut page: ResMut<ManualPage>,
-    panel: Res<Panel>,
+    panels: Res<Panels>,
     settings: Res<Settings>,
     open_buttons: Query<&Interaction, (Changed<Interaction>, With<ManualButton>)>,
     nav_buttons: Query<(&Interaction, &ManualNav), Changed<Interaction>>,
@@ -476,7 +494,7 @@ pub fn manual_controls(
                 &mut commands,
                 &codes,
                 *page,
-                &panel,
+                &panels,
                 settings.difficulty.deck_count(),
             );
         }
@@ -518,7 +536,7 @@ pub fn manual_controls(
 pub fn sync_manual_page(
     codes: Res<RoomCodes>,
     page: Res<ManualPage>,
-    panel: Res<Panel>,
+    panels: Res<Panels>,
     settings: Res<Settings>,
     mut texts: ParamSet<(
         Query<&mut Text, With<ManualHeading>>,
@@ -526,9 +544,9 @@ pub fn sync_manual_page(
         Query<&mut Text, With<ManualIndicator>>,
     )>,
 ) {
-    // The panel is watched as well as the page: a new run inserts a new one,
-    // and the line it prints has to follow it.
-    if !page.is_changed() && !panel.is_changed() {
+    // The panels are watched as well as the page: a new run inserts new ones,
+    // and the lines they print have to follow them.
+    if !page.is_changed() && !panels.is_changed() {
         return;
     }
 
@@ -538,7 +556,7 @@ pub fn sync_manual_page(
         **text = page.page().heading.to_string();
     }
     for mut text in &mut texts.p1() {
-        **text = body_text(&codes, *page, &panel, deck_count);
+        **text = body_text(&codes, *page, &panels, deck_count);
     }
     for mut text in &mut texts.p2() {
         **text = page.label();
@@ -559,12 +577,12 @@ mod tests {
 
     use super::{
         MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES,
-        SWITCH_SETTINGS, body_text, manual_controls,
+        PANEL_SETTINGS, body_text, deck_panel_line, manual_controls,
     };
     use crate::config::DESIGN_HEIGHT;
     use crate::difficulty::MAX_DECK_COUNT;
-    use crate::level::{ROOMS_PER_DECK, RoomCodes, deck_index_line};
-    use crate::panel::Panel;
+    use crate::level::{Level, ROOMS_PER_DECK, RoomCodes, deck_index_line};
+    use crate::panel::Panels;
     use crate::settings::Settings;
 
     /// Stands in for whichever difficulty a real run picks; the widest tier,
@@ -579,7 +597,7 @@ mod tests {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ManualPage>()
-            .init_resource::<Panel>()
+            .insert_resource(Panels::from_seed(0, Level::Rocket, TEST_DECK_COUNT))
             .init_resource::<Settings>()
             // Nothing renders here; the codes only have to exist for the page
             // to be built.
@@ -737,18 +755,24 @@ mod tests {
         }
     }
 
-    /// The one line of the manual that is not written until the run starts. It
-    /// still has to fit the box the rest of the page was measured for, whichever
-    /// setting the run asks for.
+    /// The lines of the manual that are not written until the run starts. They
+    /// still have to fit the box the rest of the page was measured for,
+    /// whichever settings the run deals — including the hardest panels, which
+    /// carry the most switches.
     #[test]
-    fn the_setting_printed_for_the_run_fits_the_page() {
+    fn the_settings_printed_for_the_run_fit_the_page() {
         for seed in 0..64u64 {
-            let printed = Panel::from_seed(seed, TEST_ROOM_COUNT).printed_settings();
+            let panels = Panels::from_seed(seed, Level::Rocket, TEST_DECK_COUNT);
+            let codes = RoomCodes::random(TEST_ROOM_COUNT);
 
-            assert!(
-                printed.chars().count() <= MAX_LINE_CHARS,
-                "the printed setting is too wide for the page: {printed:?}"
-            );
+            for deck in 0..TEST_DECK_COUNT {
+                let printed = deck_panel_line(&codes, &panels, deck);
+
+                assert!(
+                    printed.chars().count() <= MAX_LINE_CHARS,
+                    "the panel line for deck {deck} is too wide for the page: {printed:?}"
+                );
+            }
         }
     }
 
@@ -780,7 +804,7 @@ mod tests {
             let deck_count = difficulty.deck_count();
             let room_count = deck_count * ROOMS_PER_DECK;
             let codes = RoomCodes::random(room_count);
-            let panel = Panel::from_seed(0, room_count);
+            let panels = Panels::from_seed(0, Level::Rocket, deck_count);
             let page = (0..PAGES.len())
                 .map(|index| {
                     let mut page = ManualPage::default();
@@ -790,7 +814,7 @@ mod tests {
                 .find(|page| page.page().heading == "Room Index")
                 .expect("the manual has no room index page");
 
-            let body = body_text(&codes, page, &panel, deck_count);
+            let body = body_text(&codes, page, &panels, deck_count);
 
             assert!(
                 body.lines().count() <= MAX_PAGE_LINES,
@@ -824,53 +848,80 @@ mod tests {
         }
     }
 
-    /// The point of the page: the manual tells the player what to throw. A page
-    /// that still had the slot on it would be one that told them nothing.
+    /// However many decks the run turns out to have, the panel page's lines
+    /// plus the rest of the page must not spill past the fixed box it is
+    /// drawn in.
     #[test]
-    fn the_manual_prints_this_run_s_combination() {
-        let panel = Panel::from_seed(11, TEST_ROOM_COUNT);
+    fn the_isolation_panels_page_fits_the_page_at_every_difficulty() {
+        use crate::difficulty::Difficulty;
+
+        for difficulty in Difficulty::ALL {
+            let deck_count = difficulty.deck_count();
+            let room_count = deck_count * ROOMS_PER_DECK;
+            let codes = RoomCodes::random(room_count);
+            let panels = Panels::from_seed(0, Level::Rocket, deck_count);
+            let page = (0..PAGES.len())
+                .map(|index| {
+                    let mut page = ManualPage::default();
+                    page.turn(index as isize);
+                    page
+                })
+                .find(|page| page.page().heading == "Isolation Panels")
+                .expect("the manual has no isolation panels page");
+
+            let body = body_text(&codes, page, &panels, deck_count);
+
+            assert!(
+                body.lines().count() <= MAX_PAGE_LINES,
+                "{}'s isolation panels page runs to {} lines, past the page's {MAX_PAGE_LINES}",
+                difficulty.label(),
+                body.lines().count()
+            );
+        }
+    }
+
+    /// The point of the page: the manual tells the player what to throw, room
+    /// by room. A page that still had the slot on it would be one that told
+    /// them nothing for that deck.
+    #[test]
+    fn the_manual_prints_every_room_s_combination() {
+        let panels = Panels::from_seed(11, Level::Rocket, TEST_DECK_COUNT);
+        let codes = RoomCodes::random(TEST_ROOM_COUNT);
         let page = (0..PAGES.len())
             .map(|index| {
                 let mut page = ManualPage::default();
                 page.turn(index as isize);
                 page
             })
-            .find(|page| page.page().heading == "Isolation Panel")
-            .expect("the manual has no isolation panel page");
+            .find(|page| page.page().heading == "Isolation Panels")
+            .expect("the manual has no isolation panels page");
 
-        let body = body_text(
-            &RoomCodes::random(TEST_ROOM_COUNT),
-            page,
-            &panel,
-            TEST_DECK_COUNT,
-        );
+        let body = body_text(&codes, page, &panels, TEST_DECK_COUNT);
 
         assert!(
-            !body.contains(SWITCH_SETTINGS),
+            !body.contains(PANEL_SETTINGS),
             "the page went out with the slot still on it"
         );
-        assert!(
-            body.contains(&panel.printed_settings()),
-            "the page does not print the run's setting"
-        );
-        for (index, up) in panel.combination.iter().enumerate() {
-            let printed = format!("{}: {}", index + 1, if *up { "UP" } else { "DOWN" });
-
-            assert!(body.contains(&printed), "switch {index} is not printed");
+        for panel in panels.iter() {
+            assert!(
+                body.contains(&panel.printed_settings()),
+                "the page does not print {}'s setting",
+                panel.room.label()
+            );
         }
     }
 
     /// Every other page is printed as written, slot or no slot.
     #[test]
     fn the_pages_without_a_setting_are_printed_as_written() {
-        let panel = Panel::from_seed(11, TEST_ROOM_COUNT);
+        let panels = Panels::from_seed(11, Level::Rocket, TEST_DECK_COUNT);
         let mut page = ManualPage::default();
 
         assert_eq!(
             body_text(
                 &RoomCodes::random(TEST_ROOM_COUNT),
                 page,
-                &panel,
+                &panels,
                 TEST_DECK_COUNT
             ),
             PAGES[0].lines.join("\n")
@@ -881,7 +932,7 @@ mod tests {
             body_text(
                 &RoomCodes::random(TEST_ROOM_COUNT),
                 page,
-                &panel,
+                &panels,
                 TEST_DECK_COUNT
             ),
             PAGES[PAGES.len() - 1].lines.join("\n")
