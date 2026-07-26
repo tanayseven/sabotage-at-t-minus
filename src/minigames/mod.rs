@@ -9,6 +9,9 @@ use crate::ui::{ACCENT, GameFont};
 mod broken_wire;
 mod clean_engine;
 mod coolant_valve;
+mod pipe_flow;
+
+pub(crate) use pipe_flow::{PIPE_COLS, PIPE_ROWS, PIPE_TILES, PipePiece};
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 const WINDOW_FILL: Color = Color::srgb(1.0, 1.0, 1.0);
@@ -61,15 +64,42 @@ const BORE_CANVAS: f32 = BORE_CELL * BORE_ROWS as f32;
 /// How thick a line is drawn round the course the brush is standing on.
 const BORE_BRUSH_BORDER: f32 = 3.0;
 
+const PIPE_STRAIGHT_PATH: &str = "pipes-minigame/pipe-straight.png";
+const PIPE_STRAIGHT_FLOW_PATH: &str = "pipes-minigame/pipe-straight-flow.png";
+const PIPE_ELBOW_PATH: &str = "pipes-minigame/pipe-elbow.png";
+const PIPE_ELBOW_FLOW_PATH: &str = "pipes-minigame/pipe-elbow-flow.png";
+const PIPE_PORT_PATH: &str = "pipes-minigame/pipe-port.png";
+const PIPE_PORT_FLOW_PATH: &str = "pipes-minigame/pipe-port-flow.png";
+
+const PIPE_CANVAS_WIDTH: f32 = 336.0;
+const PIPE_CANVAS_HEIGHT: f32 = 170.0;
+/// One coupling on screen. The art is twice this, as the gauge and wires are.
+const PIPE_TILE: f32 = 64.0;
+const PIPE_PORT_WIDTH: f32 = PIPE_TILE / 2.0;
+const PIPE_GRID_WIDTH: f32 = PIPE_TILE * PIPE_COLS as f32;
+const PIPE_GRID_HEIGHT: f32 = PIPE_TILE * PIPE_ROWS as f32;
+/// The grid with a stub bolted to either end, centred in the canvas.
+const PIPE_GRID_LEFT: f32 =
+    (PIPE_CANVAS_WIDTH - (PIPE_GRID_WIDTH + PIPE_PORT_WIDTH * 2.0)) / 2.0 + PIPE_PORT_WIDTH;
+const PIPE_GRID_TOP: f32 = (PIPE_CANVAS_HEIGHT - PIPE_GRID_HEIGHT) / 2.0;
+/// Behind the pipe rather than over it, so it never hides which way a piece
+/// is lying.
+const PIPE_WRENCH_WASH: Color = Color::srgba(0.1, 0.34, 0.74, 0.22);
+
+/// The run has to fit its window or the end couplings are clipped away.
+const _: () = assert!(PIPE_CANVAS_WIDTH >= PIPE_GRID_WIDTH + PIPE_PORT_WIDTH * 2.0);
+const _: () = assert!(PIPE_CANVAS_HEIGHT >= PIPE_GRID_HEIGHT);
+
 /// How many kinds of challenge there are. What anything handing out one
 /// challenge per room counts against.
-pub const MINIGAME_COUNT: usize = 3;
+pub const MINIGAME_COUNT: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     BrokenWire,
     CoolantValve,
     CleanEngine,
+    PipeFlow,
 }
 
 impl MinigameId {
@@ -80,6 +110,7 @@ impl MinigameId {
         MinigameId::BrokenWire,
         MinigameId::CoolantValve,
         MinigameId::CleanEngine,
+        MinigameId::PipeFlow,
     ];
 }
 
@@ -113,12 +144,30 @@ pub struct EngineBoreVisualState {
     pub row: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipeTileVisual {
+    pub piece: PipePiece,
+    /// Quarter turns clockwise. The art is turned rather than shipped four
+    /// times over.
+    pub quarters: u8,
+    pub flowing: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipeRunVisualState {
+    pub tiles: [PipeTileVisual; PIPE_TILES],
+    /// Which coupling the wrench is on.
+    pub cursor: usize,
+    pub drained: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum MinigameVisualState {
     Text(String),
     BrokenWires(SequenceWireVisualState),
     CoolantGauge(CoolantGaugeVisualState),
     EngineBore(EngineBoreVisualState),
+    PipeRun(PipeRunVisualState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +175,7 @@ pub enum MinigameAudioCue {
     SequenceZap,
     CoolantVent,
     CoolantSealed,
+    PipesMadeUp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -186,14 +236,18 @@ pub(crate) struct SequenceWireRight;
 #[derive(Component)]
 pub(crate) struct SequenceWireJoint;
 
+/// The moving parts of the gauge. One component with a variant rather than a
+/// marker apiece, for the same reason `EngineBoreVisual` is one: each `&mut
+/// Node` query costs a slot in the set below, and the set only has eight.
 #[derive(Component)]
-pub(crate) struct CoolantGaugeFace;
-
-#[derive(Component)]
-pub(crate) struct CoolantGaugeSealedFace;
-
-#[derive(Component)]
-pub(crate) struct CoolantGaugeNeedle;
+pub(crate) enum CoolantGaugeVisual {
+    /// The plain face, shown while the line is still open.
+    Face,
+    /// The sealed face, swapped in for the plain one once it is shut off.
+    SealedFace,
+    /// The needle that rides along the track.
+    Needle,
+}
 
 /// The moving parts of the bore. One component with a variant rather than a
 /// marker apiece: every `&mut Node` query has to take a slot in the set below,
@@ -205,6 +259,29 @@ pub(crate) enum EngineBoreVisual {
     Cut(usize),
     /// The line drawn round the course under the brush.
     Brush,
+}
+
+/// Which part of the pipe run an image node is. One marker for all of them, so
+/// the run is redrawn from a single query rather than one per piece.
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PipeSlot {
+    Coupling(usize),
+    Inlet,
+    Drain,
+}
+
+/// The wash that marks the coupling the wrench is on.
+#[derive(Component)]
+pub(crate) struct PipeWrench;
+
+fn pipe_tile_offset(index: usize) -> Vec2 {
+    let row = index / PIPE_COLS;
+    let column = index % PIPE_COLS;
+
+    Vec2::new(
+        PIPE_GRID_LEFT + column as f32 * PIPE_TILE,
+        PIPE_GRID_TOP + row as f32 * PIPE_TILE,
+    )
 }
 
 /// The needle's left edge for a place along the track, in canvas pixels. The
@@ -529,14 +606,14 @@ pub fn spawn_minigame_window(
                                     let visual = (ImageNode { image, ..default() }, node);
 
                                     if marker_sealed {
-                                        canvas.spawn((CoolantGaugeSealedFace, visual));
+                                        canvas.spawn((CoolantGaugeVisual::SealedFace, visual));
                                     } else {
-                                        canvas.spawn((CoolantGaugeFace, visual));
+                                        canvas.spawn((CoolantGaugeVisual::Face, visual));
                                     }
                                 }
 
                                 canvas.spawn((
-                                    CoolantGaugeNeedle,
+                                    CoolantGaugeVisual::Needle,
                                     ImageNode {
                                         image: needle,
                                         ..default()
@@ -550,6 +627,91 @@ pub fn spawn_minigame_window(
                                         ..default()
                                     },
                                 ));
+                            });
+                    }
+
+                    if id == MinigameId::PipeFlow {
+                        let straight = load_pixel_art(&assets, PIPE_STRAIGHT_PATH);
+                        let port = load_pixel_art(&assets, PIPE_PORT_PATH);
+
+                        window
+                            .spawn(Node {
+                                width: px(PIPE_CANVAS_WIDTH),
+                                height: px(PIPE_CANVAS_HEIGHT),
+                                position_type: PositionType::Relative,
+                                ..default()
+                            })
+                            .with_children(|canvas| {
+                                // First, so it lies under the pipe it marks.
+                                canvas.spawn((
+                                    PipeWrench,
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(pipe_tile_offset(0).x),
+                                        top: px(pipe_tile_offset(0).y),
+                                        width: px(PIPE_TILE),
+                                        height: px(PIPE_TILE),
+                                        border_radius: BorderRadius::all(px(6)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(PIPE_WRENCH_WASH),
+                                ));
+
+                                // One piece of art for both stubs: the drain is
+                                // it turned about, so its transform is set here
+                                // and the redraw never touches it.
+                                for (slot, left, top, quarters) in [
+                                    (
+                                        PipeSlot::Inlet,
+                                        PIPE_GRID_LEFT - PIPE_PORT_WIDTH,
+                                        PIPE_GRID_TOP,
+                                        0.0,
+                                    ),
+                                    (
+                                        PipeSlot::Drain,
+                                        PIPE_GRID_LEFT + PIPE_GRID_WIDTH,
+                                        PIPE_GRID_TOP + PIPE_GRID_HEIGHT - PIPE_TILE,
+                                        180.0,
+                                    ),
+                                ] {
+                                    canvas.spawn((
+                                        slot,
+                                        ImageNode {
+                                            image: port.clone(),
+                                            ..default()
+                                        },
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: px(left),
+                                            top: px(top),
+                                            width: px(PIPE_PORT_WIDTH),
+                                            height: px(PIPE_TILE),
+                                            ..default()
+                                        },
+                                        UiTransform::from_rotation(Rot2::degrees(quarters)),
+                                    ));
+                                }
+
+                                for index in 0..PIPE_TILES {
+                                    let at = pipe_tile_offset(index);
+
+                                    canvas.spawn((
+                                        PipeSlot::Coupling(index),
+                                        ImageNode {
+                                            image: straight.clone(),
+                                            ..default()
+                                        },
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: px(at.x),
+                                            top: px(at.y),
+                                            width: px(PIPE_TILE),
+                                            height: px(PIPE_TILE),
+                                            ..default()
+                                        },
+                                        UiTransform::default(),
+                                    ));
+                                }
                             });
                     }
                 });
@@ -573,11 +735,11 @@ pub fn run_active_minigame(
         Query<&mut Node, With<SequenceWireRight>>,
         Query<&mut Node, With<SequenceWireSplitVisual>>,
         Query<&mut Node, With<SequenceWireJoint>>,
-        Query<&mut Node, With<CoolantGaugeFace>>,
-        Query<&mut Node, With<CoolantGaugeSealedFace>>,
-        Query<&mut Node, With<CoolantGaugeNeedle>>,
+        Query<(&CoolantGaugeVisual, &mut Node)>,
         Query<(&EngineBoreVisual, &mut Node)>,
+        Query<&mut Node, With<PipeWrench>>,
     )>,
+    mut pipes: Query<(&PipeSlot, &mut ImageNode, &mut UiTransform)>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
     let Some(mut active) = active else {
@@ -610,6 +772,13 @@ pub fn run_active_minigame(
                 ));
             }
             MinigameAudioCue::CoolantSealed => {
+                commands.spawn((
+                    AudioPlayer::new(assets.load(GAUGE_SEALED_TING_PATH)),
+                    PlaybackSettings::DESPAWN.with_volume(Volume::Linear(settings.sfx_volume)),
+                ));
+            }
+            // Borrowed from the coolant rig: both are a job coming good.
+            MinigameAudioCue::PipesMadeUp => {
                 commands.spawn((
                     AudioPlayer::new(assets.load(GAUGE_SEALED_TING_PATH)),
                     PlaybackSettings::DESPAWN.with_volume(Volume::Linear(settings.sfx_volume)),
@@ -664,24 +833,28 @@ pub fn run_active_minigame(
                 **text = status.clone();
             }
 
-            for mut face in &mut visual_nodes.p4() {
-                face.display = if visual.sealed {
-                    Display::None
-                } else {
-                    Display::Flex
-                };
-            }
-
-            for mut sealed in &mut visual_nodes.p5() {
-                sealed.display = if visual.sealed {
-                    Display::Flex
-                } else {
-                    Display::None
-                };
-            }
-
-            for mut needle in &mut visual_nodes.p6() {
-                needle.left = px(needle_left(visual.fill));
+            for (part, mut node) in &mut visual_nodes.p4() {
+                match part {
+                    // The two faces trade places on sealing: whichever is not
+                    // being shown is the one hidden.
+                    CoolantGaugeVisual::Face => {
+                        node.display = if visual.sealed {
+                            Display::None
+                        } else {
+                            Display::Flex
+                        };
+                    }
+                    CoolantGaugeVisual::SealedFace => {
+                        node.display = if visual.sealed {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        };
+                    }
+                    CoolantGaugeVisual::Needle => {
+                        node.left = px(needle_left(visual.fill));
+                    }
+                }
             }
         }
         MinigameVisualState::EngineBore(visual) => {
@@ -690,7 +863,7 @@ pub fn run_active_minigame(
                 **text = status.clone();
             }
 
-            for (part, mut node) in &mut visual_nodes.p7() {
+            for (part, mut node) in &mut visual_nodes.p5() {
                 match part {
                     // Widening the window is the whole animation: the clean
                     // plate is already sitting behind it, waiting to be let out.
@@ -702,6 +875,57 @@ pub fn run_active_minigame(
                         node.top = px(visual.row as f32 * BORE_CELL);
                     }
                 }
+            }
+        }
+        MinigameVisualState::PipeRun(visual) => {
+            let status = active.game.status();
+            for mut text in &mut status_labels {
+                **text = status.clone();
+            }
+
+            // The asset server hands back the handle it already loaded, so this
+            // is a clone per piece rather than a load.
+            let art = |flowing: bool, piece: PipePiece| {
+                load_pixel_art(
+                    &assets,
+                    match (piece, flowing) {
+                        (PipePiece::Straight, false) => PIPE_STRAIGHT_PATH,
+                        (PipePiece::Straight, true) => PIPE_STRAIGHT_FLOW_PATH,
+                        (PipePiece::Elbow, false) => PIPE_ELBOW_PATH,
+                        (PipePiece::Elbow, true) => PIPE_ELBOW_FLOW_PATH,
+                    },
+                )
+            };
+
+            for (slot, mut image, mut transform) in &mut pipes {
+                match *slot {
+                    PipeSlot::Coupling(index) => {
+                        let tile = visual.tiles[index];
+
+                        image.image = art(tile.flowing, tile.piece);
+                        transform.rotation = Rot2::degrees(90.0 * tile.quarters as f32);
+                    }
+                    // The inlet always runs; the drain only once the line is up.
+                    PipeSlot::Inlet => {
+                        image.image = load_pixel_art(&assets, PIPE_PORT_FLOW_PATH);
+                    }
+                    PipeSlot::Drain => {
+                        image.image = load_pixel_art(
+                            &assets,
+                            if visual.drained {
+                                PIPE_PORT_FLOW_PATH
+                            } else {
+                                PIPE_PORT_PATH
+                            },
+                        );
+                    }
+                }
+            }
+
+            let wrench = pipe_tile_offset(visual.cursor);
+            for mut wash in &mut visual_nodes.p6() {
+                wash.left = px(wrench.x);
+                wash.top = px(wrench.y);
             }
         }
     }
@@ -729,6 +953,7 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
         // No art of its own yet: the default `visual_state` prints `status`
         // into the window's text, which is the whole of its display.
         MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new()),
+        MinigameId::PipeFlow => Box::new(pipe_flow::PipeFlow::new()),
     }
 }
 
@@ -736,7 +961,7 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
 mod tests {
     use super::*;
 
-    const CHALLENGE_ASSETS: [&str; 10] = [
+    const CHALLENGE_ASSETS: [&str; 16] = [
         WIRES_BROKEN_PATH,
         WIRES_JOINT_PATH,
         WIRES_ZAP_PATH,
@@ -747,6 +972,12 @@ mod tests {
         GAUGE_SEALED_TING_PATH,
         BORE_CLEAN_PATH,
         BORE_DIRTY_PATH,
+        PIPE_STRAIGHT_PATH,
+        PIPE_STRAIGHT_FLOW_PATH,
+        PIPE_ELBOW_PATH,
+        PIPE_ELBOW_FLOW_PATH,
+        PIPE_PORT_PATH,
+        PIPE_PORT_FLOW_PATH,
     ];
 
     /// A renamed asset does not break the build — it just loads nothing, in a

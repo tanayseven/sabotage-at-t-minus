@@ -95,7 +95,7 @@ const _: () = assert!(MAX_DECK_COUNT + 3 <= MAX_PAGE_LINES);
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 7] = [
+const PAGES: [Page; 8] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -169,9 +169,22 @@ const PAGES: [Page; 7] = [
             "Every course must come clean. Both hands at once is nothing.",
         ],
     },
+    Page {
+        heading: "4. Feed Line Coupling Notes",
+        lines: &[
+            "Fault: the couplings on a feed run were shaken out of true.",
+            "The line is fed from the wall and drains two decks below.",
+            "",
+            "A and D walk the wrench along the run. SPACE turns the",
+            "coupling under it a quarter turn. Every piece takes four.",
+            "",
+            "The feed fills what it can reach, so the wet pipe is the",
+            "progress: work from where it stops, not from the far end.",
+        ],
+    },
     // TODO: Document as more minigames are added.
     /* Page {
-        heading: "4. Gimbal Lock, Engine Mount",
+        heading: "5. Gimbal Lock, Engine Mount",
         lines: &[
             "Symptom: the nozzle will not swing; steering is dead.",
             "",
@@ -184,7 +197,7 @@ const PAGES: [Page; 7] = [
         ],
     },
     Page {
-        heading: "5. Ignition Relay, Upper Deck",
+        heading: "6. Ignition Relay, Upper Deck",
         lines: &[
             "Symptom: the arming light stays dark on a good circuit.",
             "",
@@ -200,11 +213,11 @@ const PAGES: [Page; 7] = [
         heading: "Sign-Off",
         lines: &[
             "The airlock stays locked until every job is signed off:",
-            "",
             "  Isolation panel set, all three lamps up.",
             "  Signal relay jointed, the crackle steady.",
             "  Coolant regulator sealed, the needle held in band.",
             "  Engine bell scrubbed out, no soot left in the bore.",
+            "  Feed line made up, the drain running.",
             "",
             "Then get clear. The clock does not wait for the paperwork.",
         ],
