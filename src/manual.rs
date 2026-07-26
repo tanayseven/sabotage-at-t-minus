@@ -18,6 +18,7 @@
 use bevy::prelude::*;
 use bevy::text::{LineBreak, LineHeight};
 
+use crate::level::{DECK_COUNT, RoomCodes, deck_index_line};
 use crate::panel::Panel;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
@@ -78,20 +79,40 @@ struct Page {
 /// cannot push a line of prose out past the width the page is set to.
 const SWITCH_SETTINGS: &str = "\u{0}settings";
 
+/// Stands in for the room index, a line per deck, for the same reason
+/// [`SWITCH_SETTINGS`] does: the codes belong to the rooms, and a second copy
+/// of them written out here would be one to keep in step.
+const ROOM_INDEX: [&str; DECK_COUNT] = ["\u{0}deck0", "\u{0}deck1", "\u{0}deck2"];
+
+/// A slot per deck, and the page below has to have room for all of them.
+const _: () = assert!(ROOM_INDEX.len() == DECK_COUNT);
+const _: () = assert!(DECK_COUNT + 3 <= MAX_PAGE_LINES);
+
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 5] = [
+const PAGES: [Page; 6] = [
     Page {
         heading: "Read This First",
         lines: &[
             "The rocket leaves at T-00:00 whether or not it is airworthy.",
-            "Three systems were tampered with while the pad was clear.",
-            "Each has a page, and each is in a room of its own — the crew",
-            "route to the airlock walks every room, so none can be missed.",
+            "Every room aboard was breached while the pad was clear, and",
+            "one panel was thrown out of true besides. Each kind of job",
+            "has a page. The airlock stays red until all of them are done.",
             "",
             "Turn pages with the arrow keys. Esc puts the manual away.",
             "The clock does not stop while you have your nose in it.",
+        ],
+    },
+    Page {
+        heading: "Room Index",
+        lines: &[
+            "Every room carries its code on a board inside the doorway. The",
+            "readout under the clock gives the code of the room wanted:",
+            "",
+            ROOM_INDEX[0],
+            ROOM_INDEX[1],
+            ROOM_INDEX[2],
         ],
     },
     Page {
@@ -232,7 +253,12 @@ pub fn reset_manual_page(mut commands: Commands) {
 
 /// `switch_panel` is the isolation panel out in the level, not this one — the
 /// manual has a panel of its own, and one of the two had to give way.
-fn spawn_manual(commands: &mut Commands, open: ManualPage, switch_panel: &Panel) {
+fn spawn_manual(
+    commands: &mut Commands,
+    codes: &RoomCodes,
+    open: ManualPage,
+    switch_panel: &Panel,
+) {
     commands
         .spawn((
             ManualScreen,
@@ -297,7 +323,7 @@ fn spawn_manual(commands: &mut Commands, open: ManualPage, switch_panel: &Panel)
                             ));
                             body.spawn((
                                 ManualBody,
-                                Text::new(body_text(open, switch_panel)),
+                                Text::new(body_text(codes, open, switch_panel)),
                                 TextFont {
                                     font_size: FontSize::Px(BODY_FONT),
                                     ..default()
@@ -367,13 +393,15 @@ fn spawn_manual(commands: &mut Commands, open: ManualPage, switch_panel: &Panel)
 
 /// The open page's body, with the panel's setting printed onto the line the
 /// page leaves for it.
-fn body_text(page: ManualPage, panel: &Panel) -> String {
+fn body_text(codes: &RoomCodes, page: ManualPage, panel: &Panel) -> String {
     page.page()
         .lines
         .iter()
         .map(|line| {
             if *line == SWITCH_SETTINGS {
                 panel.printed_settings()
+            } else if let Some(deck) = ROOM_INDEX.iter().position(|slot| slot == line) {
+                deck_index_line(codes, deck)
             } else {
                 (*line).to_string()
             }
@@ -392,6 +420,7 @@ fn body_text(page: ManualPage, panel: &Panel) -> String {
 /// the manual if it is open, and the confirm-quit dialog — which runs after
 /// this while in normal play — must not also see that press and take it as a
 /// request to abort the mission.
+#[allow(clippy::too_many_arguments)]
 pub fn manual_controls(
     mut commands: Commands,
     mut keys: ResMut<ButtonInput<KeyCode>>,
@@ -400,6 +429,7 @@ pub fn manual_controls(
     open_buttons: Query<&Interaction, (Changed<Interaction>, With<ManualButton>)>,
     nav_buttons: Query<(&Interaction, &ManualNav), Changed<Interaction>>,
     screen: Query<Entity, With<ManualScreen>>,
+    codes: Res<RoomCodes>,
 ) {
     let clicked = open_buttons
         .iter()
@@ -408,7 +438,7 @@ pub fn manual_controls(
 
     let Ok(open) = screen.single() else {
         if toggled {
-            spawn_manual(&mut commands, *page, &panel);
+            spawn_manual(&mut commands, &codes, *page, &panel);
         }
         return;
     };
@@ -446,6 +476,7 @@ pub fn manual_controls(
 /// presses, so the keyboard and the buttons share one path to the screen.
 #[allow(clippy::type_complexity)]
 pub fn sync_manual_page(
+    codes: Res<RoomCodes>,
     page: Res<ManualPage>,
     panel: Res<Panel>,
     mut texts: ParamSet<(
@@ -464,7 +495,7 @@ pub fn sync_manual_page(
         **text = page.page().heading.to_string();
     }
     for mut text in &mut texts.p1() {
-        **text = body_text(*page, &panel);
+        **text = body_text(&codes, *page, &panel);
     }
     for mut text in &mut texts.p2() {
         **text = page.label();
@@ -484,10 +515,11 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES,
+        MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES, ROOM_INDEX,
         SWITCH_SETTINGS, body_text, manual_controls,
     };
     use crate::config::DESIGN_HEIGHT;
+    use crate::level::{RoomCodes, deck_index_line};
     use crate::panel::Panel;
 
     /// The manual's controls, and nothing else — enough to open and close it
@@ -497,6 +529,9 @@ mod tests {
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ManualPage>()
             .init_resource::<Panel>()
+            // Nothing renders here; the codes only have to exist for the page
+            // to be built.
+            .insert_resource(RoomCodes::random())
             .add_systems(Update, manual_controls);
         app
     }
@@ -665,6 +700,45 @@ mod tests {
         }
     }
 
+    /// Three lines the page is drawn with but `PAGES` never holds, so
+    /// `every_page_fits_its_box` cannot see them.
+    #[test]
+    fn the_room_index_fits_the_page() {
+        let codes = RoomCodes::random();
+
+        for deck in 0..ROOM_INDEX.len() {
+            let line = deck_index_line(&codes, deck);
+
+            assert!(
+                line.chars().count() <= MAX_LINE_CHARS,
+                "the room index line for deck {deck} is too wide for the page: {line:?}"
+            );
+        }
+    }
+
+    /// The page is a lookup table, and a lookup table is only worth opening if
+    /// the code the HUD gives is on it.
+    #[test]
+    fn the_room_index_lists_every_room_by_its_code() {
+        use crate::level::{ROOM_COUNT, Room};
+
+        let codes = RoomCodes::random();
+        let printed = (0..ROOM_INDEX.len())
+            .map(|deck| deck_index_line(&codes, deck))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+
+            assert!(
+                printed.contains(&format!("#{}", codes.of(room))),
+                "the room index leaves out {}, which the HUD can still name",
+                room.label()
+            );
+        }
+    }
+
     /// The point of the page: the manual tells the player what to throw. A page
     /// that still had the slot on it would be one that told them nothing.
     #[test]
@@ -679,7 +753,7 @@ mod tests {
             .find(|page| page.page().heading == "Isolation Panel")
             .expect("the manual has no isolation panel page");
 
-        let body = body_text(page, &panel);
+        let body = body_text(&RoomCodes::random(), page, &panel);
 
         assert!(
             !body.contains(SWITCH_SETTINGS),
@@ -702,11 +776,14 @@ mod tests {
         let panel = Panel::from_seed(11);
         let mut page = ManualPage::default();
 
-        assert_eq!(body_text(page, &panel), PAGES[0].lines.join("\n"));
+        assert_eq!(
+            body_text(&RoomCodes::random(), page, &panel),
+            PAGES[0].lines.join("\n")
+        );
 
         page.turn(PAGES.len() as isize);
         assert_eq!(
-            body_text(page, &panel),
+            body_text(&RoomCodes::random(), page, &panel),
             PAGES[PAGES.len() - 1].lines.join("\n")
         );
     }

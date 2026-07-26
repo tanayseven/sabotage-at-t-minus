@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::text::LineBreak;
 
-use crate::ui::{ACCENT, BACKDROP, MUTED_TEXT, spawn_back_button};
+use crate::ui::{ACCENT, BACKDROP, GameFont, MUTED_TEXT, spawn_back_button};
 
 /// Wide enough for the longest role and the longest name at their font sizes,
 /// so neither column wraps onto a second line.
@@ -35,7 +35,7 @@ const COLOPHON: [&str; 2] = [
 #[derive(Component)]
 pub struct CreditsScreen;
 
-pub fn spawn_credits(mut commands: Commands) {
+pub fn spawn_credits(mut commands: Commands, font: Res<GameFont>) {
     commands
         .spawn((
             CreditsScreen,
@@ -53,10 +53,7 @@ pub fn spawn_credits(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("Sabotage at T-Minus"),
-                TextFont {
-                    font_size: FontSize::Px(56.0),
-                    ..default()
-                },
+                font.at(56.0),
                 TextColor(ACCENT),
                 Node {
                     margin: UiRect::bottom(px(20)),

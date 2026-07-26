@@ -33,6 +33,8 @@ const OPEN_LIP: f32 = 10.0;
 
 const SHUT_COLOR: Color = Color::srgb(0.62, 0.42, 0.22);
 const OPEN_COLOR: Color = Color::srgb(0.38, 0.30, 0.22);
+/// Worn by the airlock while it is still held shut, so a door that will not
+/// open says why before the player has pressed anything.
 const AIRLOCK_BLOCKED_COLOR: Color = Color::srgb(0.85, 0.28, 0.25);
 /// The way out is coloured apart from the bulkhead doors, so the room the run
 /// ends in says so before the player has walked the length of it.
@@ -168,11 +170,9 @@ pub fn spawn_doors(
     }
 }
 
-/// Keeps the airlock lock state aligned with the current level objective.
-///
-/// The objective is solved only when every obstacle type present on the level
-/// is solved: panel switches (if this level has the panel) and portal
-/// minigames (if this level has portals).
+/// Keeps the airlock aligned with what the run has actually done: locked
+/// until every obstacle on the level — the panel and every breach — is
+/// signed off.
 pub fn sync_airlock_lock_state(
     level: Res<Level>,
     panel: Res<Panel>,
@@ -183,15 +183,15 @@ pub fn sync_airlock_lock_state(
         return;
     }
 
-    let lock_airlock = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
+    let locked = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
 
     for (mut door, mut sprite) in &mut doors {
         if door.kind != DoorKind::Airlock {
             continue;
         }
 
-        if door.locked != lock_airlock {
-            door.locked = lock_airlock;
+        if door.locked != locked {
+            door.locked = locked;
             sprite.color = door.color();
         }
     }
@@ -277,6 +277,76 @@ mod tests {
     use std::time::Duration;
 
     const DECK: f32 = -360.0;
+
+    /// The way out says whether it is a way out yet: held shut and red while
+    /// there is still a job on the level, green the moment the last of them is
+    /// signed off. It is across the rocket from most of the work, so the colour
+    /// is what tells a player they are done rather than the walk over to it.
+    #[test]
+    fn the_airlock_goes_green_once_every_job_is_signed_off() {
+        let mut app = App::new();
+        app.init_resource::<Level>();
+        app.init_resource::<Panel>();
+        app.insert_resource(LevelProgress::new(Level::Rocket));
+        app.add_systems(Update, sync_airlock_lock_state);
+
+        let airlock = Door::airlock(0.0, DECK);
+        let door = app
+            .world_mut()
+            .spawn((
+                airlock,
+                Sprite {
+                    color: airlock.color(),
+                    ..default()
+                },
+            ))
+            .id();
+
+        app.update();
+        assert_eq!(
+            app.world().entity(door).get::<Sprite>().unwrap().color,
+            AIRLOCK_BLOCKED_COLOR,
+            "the airlock is green with the whole level still to work"
+        );
+
+        // Sign off the panel and every breach.
+        app.world_mut().resource_mut::<Panel>().solved = true;
+        let mut progress = app.world_mut().resource_mut::<LevelProgress>();
+        progress.completed_portals = progress.total_portals;
+        app.update();
+
+        assert!(!app.world().entity(door).get::<Door>().unwrap().locked);
+        assert_eq!(
+            app.world().entity(door).get::<Sprite>().unwrap().color,
+            AIRLOCK_COLOR,
+            "the airlock did not go green once the level was clear"
+        );
+    }
+
+    /// The way out is the way in: a run opens with the player stood at it.
+    #[test]
+    fn the_airlock_is_at_the_entrance_the_run_opens_at() {
+        let airlock = Level::Rocket
+            .doors()
+            .iter()
+            .find(|door| door.kind == DoorKind::Airlock)
+            .copied()
+            .expect("the rocket has no airlock to leave by");
+        let spawn = Level::Rocket.player_spawn();
+
+        assert!(
+            spawn.y > airlock.sill() && spawn.y < airlock.lintel(),
+            "the run opens on a different deck from the airlock"
+        );
+        assert!(
+            airlock.in_reach(spawn),
+            "the run does not open within reach of the airlock it boarded through"
+        );
+        assert!(
+            airlock.locked,
+            "the airlock starts unlocked rather than shut until the run is worked"
+        );
+    }
 
     #[test]
     fn a_door_stands_on_the_deck_it_is_given() {

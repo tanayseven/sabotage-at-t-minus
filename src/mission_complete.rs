@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::state::GameState;
-use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
+use crate::ui::{ACCENT, GameFont, MUTED_TEXT, spawn_button};
 
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
 const PANEL: Color = Color::srgb(0.10, 0.16, 0.11);
@@ -15,7 +15,7 @@ pub struct MissionCompleteScreen;
 #[derive(Component)]
 pub struct MissionCompleteButton;
 
-pub fn spawn_mission_complete(mut commands: Commands) {
+pub fn spawn_mission_complete(mut commands: Commands, font: Res<GameFont>) {
     let button_label = "Back to Menu";
     let message = "Congratulations! You can safely fly off now.\nPress Space to continue.";
 
@@ -49,10 +49,7 @@ pub fn spawn_mission_complete(mut commands: Commands) {
                 .with_children(|panel| {
                     panel.spawn((
                         Text::new("Mission Complete"),
-                        TextFont {
-                            font_size: FontSize::Px(40.0),
-                            ..default()
-                        },
+                        font.at(40.0),
                         TextColor(ACCENT),
                     ));
                     panel.spawn((

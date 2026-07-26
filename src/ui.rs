@@ -3,13 +3,43 @@ use bevy::window::PrimaryWindow;
 
 use crate::config::{VIEW_HEIGHT, VIEW_WIDTH};
 use crate::countdown::spawn_countdown;
-use crate::level::{Level, LevelProgress};
+use crate::level::{Level, LevelProgress, RoomCodes};
 use crate::manual::ManualButton;
 use crate::panel::{Panel, spawn_panel_status};
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
+/// Rubik Pixels, the game's typeface.
+pub const FONT_PATH: &str = "fonts/RubikPixels-Regular.ttf";
+
+/// The loaded typeface, set explicitly rather than installed over Bevy's
+/// default font handle, because only one line per screen wears it: the title.
+/// Everything read rather than glanced at — subtitles, button labels, the HUD,
+/// the repair manual — stays in the engine's plain face, which a pixel font of
+/// this kind is no good for at those sizes.
+#[derive(Resource, Clone)]
+pub struct GameFont(pub Handle<Font>);
+
+impl GameFont {
+    /// The one way this game builds a [`TextFont`]; the size is all a caller
+    /// ever varies.
+    ///
+    /// Smoothing stays on, counter-intuitive as that is for a pixel face: this
+    /// one draws its letters as loose scatters of small squares, and turning
+    /// antialiasing off drops the sparser ones below a whole pixel and the
+    /// words come apart.
+    pub fn at(&self, font_size: f32) -> TextFont {
+        TextFont::from_font_size(FontSize::Px(font_size)).with_font(self.0.clone())
+    }
+}
+
 pub const ACCENT: Color = Color::srgb(0.9, 0.35, 0.2);
+/// The two colours the title screen letters the game's name in. Shared with the
+/// in-level HUD, so a run reads as the same game the menu introduced.
+pub const TITLE_BLUE: Color = Color::srgb(0.31, 0.48, 0.86);
+pub const TITLE_CRIMSON: Color = Color::srgb(0.79, 0.11, 0.24);
+/// The mission clock, right up until it goes hot and turns [`ACCENT`].
+pub const CLOCK_GREEN: Color = Color::srgb(0.55, 0.90, 0.62);
 pub const MUTED_TEXT: Color = Color::srgb(0.75, 0.77, 0.82);
 /// Shared by every full-screen menu page, so they cut between each other
 /// without a flash of a different colour.
@@ -23,6 +53,10 @@ const HUD_BUTTON_SIZE: Vec2 = Vec2::new(120.0, 44.0);
 const HUD_BUTTON_FONT: f32 = 22.0;
 const HUD_BUTTON_GAP: f32 = 12.0;
 const HUD_COUNTDOWN_FONT: f32 = 56.0;
+/// The level's name, in the corner. A little under the launch pad's, which has
+/// a whole empty screen to itself rather than a run going on underneath — but
+/// not much under: the pixel face stops reading below the mid-thirties.
+const HUD_TITLE_FONT: f32 = 36.0;
 const HUD_STATUS_FONT: f32 = 20.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
@@ -52,6 +86,19 @@ pub fn spawn_button(
     size: Vec2,
     font_size: f32,
 ) {
+    spawn_labelled_button(parent, label, action, size, font_size, Color::WHITE);
+}
+
+/// As [`spawn_button`], but for the title screen, whose labels are tinted to
+/// match its two-tone heading.
+pub fn spawn_labelled_button(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    action: impl Component,
+    size: Vec2,
+    font_size: f32,
+    label_color: Color,
+) {
     parent
         .spawn((
             Button,
@@ -73,7 +120,7 @@ pub fn spawn_button(
                     font_size: FontSize::Px(font_size),
                     ..default()
                 },
-                TextColor(Color::WHITE),
+                TextColor(label_color),
             ));
         });
 }
@@ -91,16 +138,40 @@ pub fn button_visuals(
     }
 }
 
-pub fn spawn_hud(commands: &mut Commands, level: Level, panel: &Panel, progress: &LevelProgress) {
+pub fn spawn_hud(
+    commands: &mut Commands,
+    font: &GameFont,
+    codes: &RoomCodes,
+    level: Level,
+    panel: &Panel,
+    progress: &LevelProgress,
+) {
+    // The level names itself in the corner, the way the launch pad does.
     commands.spawn((
         GameEntity,
-        Text::new(
-            "Sabotage at T-Minus\nA/D to move, W / space to jump, W/S on a ladder\nE to work a door or throw a switch — M for the repair manual",
-        ),
-        TextColor(MUTED_TEXT),
+        Text::new(level.title()),
+        font.at(HUD_TITLE_FONT),
+        TextColor(TITLE_BLUE),
         Node {
             position_type: PositionType::Absolute,
             top: px(16),
+            left: px(16),
+            ..default()
+        },
+    ));
+
+    // Along the bottom rather than under the title: the top edge is spoken for
+    // by the clock and the panel status, both of them centred, and the controls
+    // are long enough lines to run into them.
+    commands.spawn((
+        GameEntity,
+        Text::new(
+            "A/D to move, W / space to jump, W/S on a ladder\nE to work a door or throw a switch — M for the repair manual",
+        ),
+        TextColor(TITLE_BLUE),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(16),
             left: px(16),
             ..default()
         },
@@ -129,7 +200,7 @@ pub fn spawn_hud(commands: &mut Commands, level: Level, panel: &Panel, progress:
             // Under the clock, because it is read the same way: a glance, not a
             // look. It names the room the panel is in — finding it is not the
             // puzzle, and the clock is short.
-            spawn_panel_status(parent, level, panel, progress, HUD_STATUS_FONT);
+            spawn_panel_status(parent, codes, level, panel, progress, HUD_STATUS_FONT);
         });
 
     commands

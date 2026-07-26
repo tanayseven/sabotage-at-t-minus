@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::config::{MISSION_SECONDS, URGENT_SECONDS};
 use crate::state::PlayingState;
-use crate::ui::{ACCENT, MUTED_TEXT};
+use crate::ui::{ACCENT, CLOCK_GREEN};
 
 /// The clock for the current level. It keeps ticking through portal minigames,
 /// but pauses behind confirm-quit and other non-gameplay overlays.
@@ -34,7 +34,7 @@ pub fn spawn_countdown(parent: &mut ChildSpawnerCommands, font_size: f32) {
             font_size: FontSize::Px(font_size),
             ..default()
         },
-        TextColor(MUTED_TEXT),
+        TextColor(CLOCK_GREEN),
     ));
 }
 
@@ -53,7 +53,7 @@ pub fn tick_countdown(
         *color = if remaining <= URGENT_SECONDS {
             ACCENT.into()
         } else {
-            MUTED_TEXT.into()
+            CLOCK_GREEN.into()
         };
     }
 

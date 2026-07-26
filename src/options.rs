@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 
 use crate::settings::{Settings, VOLUME_STEP, VolumeChannel};
-use crate::ui::{ACCENT, BACKDROP, BackButton, MUTED_TEXT, spawn_back_button, spawn_button};
+use crate::ui::{
+    ACCENT, BACKDROP, BackButton, GameFont, MUTED_TEXT, spawn_back_button, spawn_button,
+};
 
 const TRACK_WIDTH: f32 = 320.0;
 const TRACK_HEIGHT: f32 = 14.0;
@@ -31,7 +33,7 @@ pub struct VolumeFill(VolumeChannel);
 #[derive(Component, Clone, Copy)]
 pub struct VolumeReadout(VolumeChannel);
 
-pub fn spawn_options(mut commands: Commands, settings: Res<Settings>) {
+pub fn spawn_options(mut commands: Commands, settings: Res<Settings>, font: Res<GameFont>) {
     commands
         .spawn((
             OptionsScreen,
@@ -49,10 +51,7 @@ pub fn spawn_options(mut commands: Commands, settings: Res<Settings>) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("Options"),
-                TextFont {
-                    font_size: FontSize::Px(56.0),
-                    ..default()
-                },
+                font.at(56.0),
                 TextColor(ACCENT),
                 Node {
                     margin: UiRect::bottom(px(12)),

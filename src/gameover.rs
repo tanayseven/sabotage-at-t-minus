@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::state::GameState;
-use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
+use crate::ui::{ACCENT, GameFont, MUTED_TEXT, spawn_button};
 
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
 const PANEL: Color = Color::srgb(0.12, 0.13, 0.17);
@@ -15,7 +15,7 @@ pub struct GameOverScreen;
 #[derive(Component)]
 pub struct GameOverButton;
 
-pub fn spawn_game_over(mut commands: Commands) {
+pub fn spawn_game_over(mut commands: Commands, font: Res<GameFont>) {
     commands
         .spawn((
             GameOverScreen,
@@ -45,14 +45,7 @@ pub fn spawn_game_over(mut commands: Commands) {
                     BackgroundColor(PANEL),
                 ))
                 .with_children(|panel| {
-                    panel.spawn((
-                        Text::new("Game Over"),
-                        TextFont {
-                            font_size: FontSize::Px(40.0),
-                            ..default()
-                        },
-                        TextColor(ACCENT),
-                    ));
+                    panel.spawn((Text::new("Game Over"), font.at(40.0), TextColor(ACCENT)));
                     panel.spawn((
                         Text::new("The clock ran out. The rocket launched without you."),
                         TextFont {

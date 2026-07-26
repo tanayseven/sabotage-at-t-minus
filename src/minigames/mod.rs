@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use crate::settings::Settings;
 use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
+use crate::ui::GameFont;
 
 mod broken_wire;
 mod coolant_valve;
@@ -178,6 +179,7 @@ pub fn spawn_minigame_window(
     pending: Option<Res<PendingMinigame>>,
     active: Option<Res<ActiveMinigame>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
+    font: Res<GameFont>,
 ) {
     let (id, title, instructions, status) = if let Some(pending) = pending {
         let config = pending.0;
@@ -241,10 +243,7 @@ pub fn spawn_minigame_window(
                     window.spawn((
                         MinigameTitle,
                         Text::new(title),
-                        TextFont {
-                            font_size: FontSize::Px(32.0),
-                            ..default()
-                        },
+                        font.at(32.0),
                         TextColor(Color::BLACK),
                     ));
                     window.spawn((

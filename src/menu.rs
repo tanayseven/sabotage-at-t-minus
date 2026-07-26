@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 
 use crate::state::GameState;
-use crate::ui::{ACCENT, BACKDROP, spawn_button};
+use crate::ui::{BACKDROP, GameFont, TITLE_BLUE, TITLE_CRIMSON, spawn_labelled_button};
 
 const MENU_BUTTON_SIZE: Vec2 = Vec2::new(260.0, 64.0);
 const MENU_BUTTON_FONT: f32 = 28.0;
+const TITLE_FONT: f32 = 64.0;
 
 #[derive(Component)]
 pub struct MenuScreen;
@@ -33,7 +34,7 @@ const MENU_BUTTONS: [(&str, MenuButton); 4] = [
     ("Quit", MenuButton::Quit),
 ];
 
-pub fn spawn_menu(mut commands: Commands) {
+pub fn spawn_menu(mut commands: Commands, font: Res<GameFont>) {
     commands
         .spawn((
             MenuScreen,
@@ -49,21 +50,32 @@ pub fn spawn_menu(mut commands: Commands) {
             BackgroundColor(BACKDROP),
         ))
         .with_children(|parent| {
-            parent.spawn((
-                Text::new("Sabotage at T-Minus"),
-                TextFont {
-                    font_size: FontSize::Px(64.0),
-                    ..default()
-                },
-                TextColor(ACCENT),
-                Node {
-                    margin: UiRect::bottom(px(16)),
-                    ..default()
-                },
-            ));
+            // Two-tone: the setup in blue, the thing being raced in crimson.
+            parent
+                .spawn((
+                    Text::new("Sabotage at "),
+                    font.at(TITLE_FONT),
+                    TextColor(TITLE_BLUE),
+                    Node {
+                        margin: UiRect::bottom(px(16)),
+                        ..default()
+                    },
+                ))
+                .with_child((
+                    TextSpan::new("T-Minus"),
+                    font.at(TITLE_FONT),
+                    TextColor(TITLE_CRIMSON),
+                ));
 
             for (label, action) in MENU_BUTTONS {
-                spawn_button(parent, label, action, MENU_BUTTON_SIZE, MENU_BUTTON_FONT);
+                spawn_labelled_button(
+                    parent,
+                    label,
+                    action,
+                    MENU_BUTTON_SIZE,
+                    MENU_BUTTON_FONT,
+                    TITLE_BLUE,
+                );
             }
         });
 }
