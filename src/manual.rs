@@ -35,10 +35,11 @@ const NAV_BUTTON_FONT: f32 = 18.0;
 const MAX_PAGE_LINES: usize = 8;
 const MAX_LINE_CHARS: usize = 62;
 
-/// A generous upper bound on the default font's average advance per character,
-/// as a fraction of the font size. Only used to size the box the text is set
-/// in, so erring wide costs a little padding and erring narrow would clip.
-const CHAR_ADVANCE: f32 = 0.6;
+/// A generous upper bound on Jersey 10's average advance per character, as a
+/// fraction of the font size. Only used to size the box the text is set in, so
+/// erring wide costs a little padding and erring narrow would clip. Prose in
+/// this face measures about 0.36; the headroom covers capital-heavy lines.
+const CHAR_ADVANCE: f32 = 0.45;
 
 /// Sized to the longest line the pages are allowed, and held fixed so a short
 /// page does not draw a narrower panel than a long one.
