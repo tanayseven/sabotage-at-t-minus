@@ -102,7 +102,8 @@ fn main() {
     app.insert_resource(font);
 
     // Drawn once, here, rather than per run: the codes are what the manual's
-    // room index is printed from, and both have to be looking at the same six.
+    // room index is printed from, and both have to be looking at the same
+    // eight.
     app.insert_resource(RoomCodes::random());
 
     app.init_state::<GameState>()

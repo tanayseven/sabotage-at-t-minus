@@ -82,7 +82,7 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// Stands in for the room index, a line per deck, for the same reason
 /// [`SWITCH_SETTINGS`] does: the codes belong to the rooms, and a second copy
 /// of them written out here would be one to keep in step.
-const ROOM_INDEX: [&str; DECK_COUNT] = ["\u{0}deck0", "\u{0}deck1", "\u{0}deck2"];
+const ROOM_INDEX: [&str; DECK_COUNT] = ["\u{0}deck0", "\u{0}deck1", "\u{0}deck2", "\u{0}deck3"];
 
 /// A slot per deck, and the page below has to have room for all of them.
 const _: () = assert!(ROOM_INDEX.len() == DECK_COUNT);
@@ -113,6 +113,7 @@ const PAGES: [Page; 6] = [
             ROOM_INDEX[0],
             ROOM_INDEX[1],
             ROOM_INDEX[2],
+            ROOM_INDEX[3],
         ],
     },
     Page {
