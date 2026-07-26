@@ -25,11 +25,17 @@
 
 use bevy::prelude::*;
 
-use super::{MinigameInstance, MinigameOutcome};
+use super::{
+    BORE_CELLS, BORE_ROWS, EngineBoreVisualState, MinigameInstance, MinigameOutcome,
+    MinigameVisualState,
+};
 
-/// Courses stacked up the bore — the rows of the grid. Odd, so that the brush
-/// has a middle course to be set down on with as much bore above it as below.
-const ROWS: usize = 5;
+/// Courses stacked up the bore — the rows of the grid. Taken from the art
+/// rather than set here: the grid is painted into both plates, so a second
+/// opinion about how many courses there are would draw a bore the challenge
+/// disagreed with. Odd, so that the brush has a middle course to be set down on
+/// with as much bore above it as below.
+const ROWS: usize = BORE_ROWS;
 
 /// The course the brush is set down on: the middle one. Integer division lands
 /// on it exactly because [`ROWS`] is odd — two courses above, two below.
@@ -41,18 +47,11 @@ const STARTING_ROW: usize = ROWS / 2;
 /// in the middle is just starting at an end by another name.
 const _: () = assert!(ROWS >= 3 && ROWS % 2 == 1);
 
-/// How far along a course one stroke cuts — the columns of the grid. `ROWS` by
-/// this is the whole job: enough strokes to feel like work, short enough that
-/// it is not the whole two-minute run.
-const CELLS_PER_ROW: u32 = 5;
-
-/// Drawn for soot still in the bore, and for a cell cut clean.
-const SOOT: char = '#';
-const CLEAN: char = '_';
-
-/// Marks the course the brush is standing on.
-const BRUSH_HERE: &str = "> ";
-const BRUSH_ELSEWHERE: &str = "  ";
+/// How far along a course one stroke cuts — the columns of the grid, painted
+/// into the plates the same way [`ROWS`] is. `ROWS` by this is the whole job:
+/// enough strokes to feel like work, short enough that it is not the whole
+/// two-minute run.
+const CELLS_PER_ROW: u32 = BORE_CELLS;
 
 /// Which way the brush was last pulled. There is no "neither" once a course is
 /// under way, so the starting state is an [`Option`] rather than a variant —
@@ -96,6 +95,13 @@ impl CleanEngine {
 
     fn cleaned(&self) -> bool {
         self.rows.iter().all(|cut| *cut >= CELLS_PER_ROW)
+    }
+
+    /// How much of the whole bore has been cut, 0 to 1.
+    fn cut_fraction(&self) -> f32 {
+        let cut: u32 = self.rows.iter().map(|cut| (*cut).min(CELLS_PER_ROW)).sum();
+
+        cut as f32 / (ROWS as u32 * CELLS_PER_ROW) as f32
     }
 
     /// Walks the brush `by` courses. Clamped rather than wrapping: the bore has
@@ -169,30 +175,19 @@ impl MinigameInstance for CleanEngine {
         "Consult the repair manual."
     }
 
-    /// The bore drawn as it stands: one line per course, cut cells on the left
-    /// and soot still to go on the right, with the course under the brush
-    /// called out. Kept narrow and short on purpose — the window gives the
-    /// status about twenty characters and a handful of rows before it spills.
+    /// One line under the picture. The grid itself is drawn from
+    /// [`Self::visual_state`], so this says how the job stands rather than
+    /// spelling the bore out a second time — and it is kept short because the
+    /// window gives the status about twenty characters before it wraps.
     fn status(&self) -> String {
-        self.rows
-            .iter()
-            .enumerate()
-            .map(|(index, cut)| {
-                let here = if index == self.row {
-                    BRUSH_HERE
-                } else {
-                    BRUSH_ELSEWHERE
-                };
-                let cut = (*cut).min(CELLS_PER_ROW) as usize;
+        format!("Bore {:.0}% clean.", self.cut_fraction() * 100.0)
+    }
 
-                format!(
-                    "{here}{}{}",
-                    CLEAN.to_string().repeat(cut),
-                    SOOT.to_string().repeat(CELLS_PER_ROW as usize - cut),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+    fn visual_state(&self) -> MinigameVisualState {
+        MinigameVisualState::EngineBore(EngineBoreVisualState {
+            cut: self.rows,
+            row: self.row,
+        })
     }
 
     fn tick(
@@ -281,7 +276,7 @@ mod tests {
 
         assert_eq!(game.rows, [0; ROWS]);
         assert_eq!(tick_with(&mut game, &[]), None, "it signed itself off");
-        assert!(!game.status().contains(CLEAN));
+        assert!(game.status().contains("0%"), "{}", game.status());
     }
 
     /// The brush is set down mid-bore, with as much of the job above it as
@@ -462,49 +457,62 @@ mod tests {
         assert_eq!(game.rows, [CELLS_PER_ROW; ROWS]);
     }
 
+    /// What the pictures are driven off. A snapshot that did not follow the
+    /// brush would leave the plates showing a bore nobody is working.
     #[test]
-    fn the_display_calls_out_the_course_under_the_brush() {
+    fn the_picture_follows_the_brush_and_the_cutting() {
         let mut game = CleanEngine::new();
         tick_with(&mut game, &[KeyCode::KeyS]);
+        scrub(&mut game, 2);
 
-        let status = game.status();
-        let lines: Vec<&str> = status.lines().collect();
+        let MinigameVisualState::EngineBore(bore) = game.visual_state() else {
+            panic!("the bore is not drawn as a bore");
+        };
 
-        assert_eq!(lines.len(), ROWS, "a course is not drawn");
-        assert!(
-            lines[STARTING_ROW + 1].starts_with(BRUSH_HERE),
-            "the brush is not marked",
-        );
-        assert_eq!(
-            lines.iter().filter(|line| line.starts_with('>')).count(),
-            1,
-            "the brush is in two places at once",
-        );
+        assert_eq!(bore.row, STARTING_ROW + 1, "the brush is drawn elsewhere");
+        assert_eq!(bore.cut[STARTING_ROW + 1], 2, "the cutting is not drawn");
+        assert_eq!(bore.cut[STARTING_ROW], 0, "it drew a course it never cut");
     }
 
-    /// What the status has room for: a 380px window with 22px of padding either
-    /// side, set at 28px, comes to about twenty characters across, and only so
-    /// many rows before the title and instructions above it are pushed out.
+    /// The clean plate is let out cell by cell, so a course can never ask for
+    /// more of it than there is — a window wider than the plate would show the
+    /// bore's own background past the end of the picture.
+    #[test]
+    fn no_course_is_ever_drawn_cut_past_its_end() {
+        let mut game = CleanEngine::new();
+
+        for _ in 0..ROWS {
+            scrub(&mut game, CELLS_PER_ROW + 3);
+            tick_with(&mut game, &[KeyCode::KeyS]);
+
+            let MinigameVisualState::EngineBore(bore) = game.visual_state() else {
+                panic!("the bore is not drawn as a bore");
+            };
+
+            assert!(bore.row < ROWS, "the brush is drawn off the plate");
+            for cut in bore.cut {
+                assert!(cut <= CELLS_PER_ROW, "a course is drawn {cut} cells cut");
+            }
+        }
+    }
+
+    /// What the status line has room for: a 380px window with 22px of padding
+    /// either side, set at 28px, comes to about twenty characters. Past that it
+    /// wraps under the picture and pushes the layout about.
     const MAX_STATUS_CHARS: usize = 20;
-    const MAX_STATUS_ROWS: usize = 5;
 
     #[test]
-    fn the_display_fits_the_window() {
+    fn the_status_line_fits_the_window() {
         let mut game = CleanEngine::new();
 
         for _ in 0..ROWS {
             let status = game.status();
 
+            assert_eq!(status.lines().count(), 1, "the status is not one line");
             assert!(
-                status.lines().count() <= MAX_STATUS_ROWS,
-                "the bore is drawn too tall for the window",
+                status.chars().count() <= MAX_STATUS_CHARS,
+                "the status is too wide for the window: {status:?}",
             );
-            for line in status.lines() {
-                assert!(
-                    line.chars().count() <= MAX_STATUS_CHARS,
-                    "the bore is drawn too wide for the window: {line:?}",
-                );
-            }
 
             scrub(&mut game, CELLS_PER_ROW);
             tick_with(&mut game, &[KeyCode::KeyS]);
