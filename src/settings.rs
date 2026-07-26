@@ -12,10 +12,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            // The music is mastered louder than the game needs it, so it sits
-            // under the action rather than over it by default.
-            music_volume: 0.4,
-            sfx_volume: 0.7,
+            music_volume: 0.5,
+            sfx_volume: 0.5,
         }
     }
 }
