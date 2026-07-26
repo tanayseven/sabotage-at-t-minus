@@ -29,6 +29,8 @@ pub const TITLE_BLUE: Color = Color::srgb(0.31, 0.48, 0.86);
 pub const TITLE_CRIMSON: Color = Color::srgb(0.79, 0.11, 0.24);
 /// The mission clock, right up until it goes hot and turns [`ACCENT`].
 pub const CLOCK_GREEN: Color = Color::srgb(0.55, 0.90, 0.62);
+/// The mission clock once time is getting short, before it goes fully hot.
+pub const CLOCK_ORANGE: Color = Color::srgb(0.95, 0.65, 0.20);
 pub const MUTED_TEXT: Color = Color::srgb(0.75, 0.77, 0.82);
 /// Shared by every full-screen menu page, so they cut between each other
 /// without a flash of a different colour.
