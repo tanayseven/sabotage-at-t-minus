@@ -1,6 +1,6 @@
 [package]
 name = "sabotage-at-t-minus"
-version = "0.7.0"
+version = "0.9.0"
 edition = "2024"
 description = "A game built with the Bevy engine."
 publish = false
@@ -15,6 +15,7 @@ publish = false
 #   scene                      — no scene assets; nothing is deserialised
 #   bevy_gilrs / gamepad       — keyboard and mouse only
 #   sysinfo_plugin             — only logged a SystemInfo line at startup
+#   default_font               — src/font.rs supplies Jersey 10 in its place
 #   bevy_clipboard             — no text input anywhere
 #   sprite_picking/mesh_picking— only the UI needs hit-testing
 #   bevy_post_process          — no bloom, no tonemapping stack
@@ -30,7 +31,6 @@ bevy = { version = "0.19", default-features = false, features = [
   # Windowing and input
   "bevy_winit",
   "custom_cursor",
-  "default_font",
   "x11",
   "wayland",
   "webgl2",

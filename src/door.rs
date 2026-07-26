@@ -6,13 +6,12 @@
 //! against a clock, and a door that shut behind the player would only ever cost
 //! them the same press twice.
 //!
-//! Two of the rocket's doors are not ways between rooms but ways out: the
-//! airlock the run leaves by, and the boarding hatch it came in through. Both
-//! are worked like any other door, and since working a door means standing at
-//! it, the press that opens one is in practice the same one that puts the
-//! player through it. Opening and leaving are still two systems rather than
-//! one, so that a way out already open — walked away from and come back to —
-//! puts the player through just the same.
+//! One door in the rocket is not a way between rooms but the way out. It is
+//! worked like any other, and since working a door means standing at it, the
+//! press that opens the airlock is in practice the same one that puts the run
+//! outside. Opening it and leaving through it are still two systems rather than
+//! one, so that an airlock already open — walked away from and come back to —
+//! puts the player out just the same.
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -22,7 +21,7 @@ use crate::level::{Level, LevelProgress};
 use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
-use crate::state::{GameState, PlayingState};
+use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
 /// than standing proud of it, and tall enough to walk through without ducking.
@@ -34,15 +33,12 @@ const OPEN_LIP: f32 = 10.0;
 
 const SHUT_COLOR: Color = Color::srgb(0.62, 0.42, 0.22);
 const OPEN_COLOR: Color = Color::srgb(0.38, 0.30, 0.22);
-/// Worn by either way out while it is still held shut, so a door that will not
+/// Worn by the airlock while it is still held shut, so a door that will not
 /// open says why before the player has pressed anything.
-const BLOCKED_COLOR: Color = Color::srgb(0.85, 0.28, 0.25);
+const AIRLOCK_BLOCKED_COLOR: Color = Color::srgb(0.85, 0.28, 0.25);
 /// The way out is coloured apart from the bulkhead doors, so the room the run
 /// ends in says so before the player has walked the length of it.
 const AIRLOCK_COLOR: Color = Color::srgb(0.45, 0.9, 0.55);
-/// The way back to the pad, coloured apart from the airlock: one carries the
-/// mission on, the other gives it up.
-const HATCH_COLOR: Color = Color::srgb(0.45, 0.66, 0.95);
 
 /// Behind the player, so walking into an opened door reads as stepping through
 /// it, and behind the bulkhead tiles it is set into.
@@ -78,12 +74,8 @@ const REACH: Vec2 = Vec2::new(
 pub enum DoorKind {
     /// Between two rooms on the same deck.
     Bulkhead,
-    /// Out of the rocket altogether, and on to whatever follows.
+    /// Out of the rocket altogether.
     Airlock,
-    /// The hatch the player boarded through, back out onto the launch pad. Held
-    /// shut until every breach is sealed — it is a way to break off a run that
-    /// has been worked, not a way to walk out of one.
-    Hatch,
 }
 
 /// A door, as both the layout that describes it and the component that tracks
@@ -120,13 +112,6 @@ impl Door {
         }
     }
 
-    pub const fn hatch(x: f32, deck: f32) -> Self {
-        Self {
-            locked: true,
-            ..Self::standing_on(x, deck, DoorKind::Hatch)
-        }
-    }
-
     /// The sill — the deck plate the door stands on.
     pub const fn sill(&self) -> f32 {
         self.at.y - DOOR_SIZE.y / 2.0
@@ -147,9 +132,8 @@ impl Door {
 
     pub fn color(&self) -> Color {
         match self.kind {
-            DoorKind::Airlock | DoorKind::Hatch if self.locked => BLOCKED_COLOR,
+            DoorKind::Airlock if self.locked => AIRLOCK_BLOCKED_COLOR,
             DoorKind::Airlock => AIRLOCK_COLOR,
-            DoorKind::Hatch => HATCH_COLOR,
             DoorKind::Bulkhead if self.open => OPEN_COLOR,
             DoorKind::Bulkhead => SHUT_COLOR,
         }
@@ -167,12 +151,8 @@ pub fn spawn_doors(
     for door in doors {
         let mut door = *door;
 
-        match door.kind {
-            DoorKind::Airlock => {
-                door.locked = !progress.all_obstacles_completed(level, panel.room, panel.solved);
-            }
-            DoorKind::Hatch => door.locked = !progress.all_portals_completed(),
-            DoorKind::Bulkhead => {}
+        if door.kind == DoorKind::Airlock {
+            door.locked = !progress.all_obstacles_completed(level, panel.room, panel.solved);
         }
 
         commands.spawn((
@@ -190,13 +170,10 @@ pub fn spawn_doors(
     }
 }
 
-/// Keeps both ways out aligned with what the run has actually done.
-///
-/// They are held to different bars on purpose. The airlock carries the run on,
-/// so it waits for every obstacle on the level: the panel and every breach. The
-/// hatch only takes the player back to the pad they came from, so it waits for
-/// the breaches alone — the panel is the next crew's problem.
-pub fn sync_locked_doors(
+/// Keeps the airlock aligned with what the run has actually done: locked
+/// until every obstacle on the level — the panel and every breach — is
+/// signed off.
+pub fn sync_airlock_lock_state(
     level: Res<Level>,
     panel: Res<Panel>,
     progress: Res<LevelProgress>,
@@ -206,42 +183,17 @@ pub fn sync_locked_doors(
         return;
     }
 
-    let lock_airlock = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
-    let lock_hatch = !progress.all_portals_completed();
+    let locked = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
 
     for (mut door, mut sprite) in &mut doors {
-        let locked = match door.kind {
-            DoorKind::Airlock => lock_airlock,
-            DoorKind::Hatch => lock_hatch,
-            DoorKind::Bulkhead => continue,
-        };
+        if door.kind != DoorKind::Airlock {
+            continue;
+        }
 
         if door.locked != locked {
             door.locked = locked;
             sprite.color = door.color();
         }
-    }
-}
-
-/// Puts the player back out onto the launch pad through the hatch they boarded
-/// by. Unlike the airlock this carries the run on to nothing: leaving ends it
-/// where it stands, and boarding again starts a fresh one.
-pub fn leave_through_hatch(
-    players: Query<&Transform, With<Player>>,
-    doors: Query<&Door>,
-    mut next_state: ResMut<NextState<GameState>>,
-) {
-    let Ok(player) = players.single() else {
-        return;
-    };
-    let at = player.translation.truncate();
-
-    let stepped_out = doors
-        .iter()
-        .any(|door| door.kind == DoorKind::Hatch && door.open && !door.locked && door.in_reach(at));
-
-    if stepped_out {
-        next_state.set(GameState::Launchpad);
     }
 }
 
@@ -336,7 +288,7 @@ mod tests {
         app.init_resource::<Level>();
         app.init_resource::<Panel>();
         app.insert_resource(LevelProgress::new(Level::Rocket));
-        app.add_systems(Update, sync_locked_doors);
+        app.add_systems(Update, sync_airlock_lock_state);
 
         let airlock = Door::airlock(0.0, DECK);
         let door = app
@@ -353,7 +305,7 @@ mod tests {
         app.update();
         assert_eq!(
             app.world().entity(door).get::<Sprite>().unwrap().color,
-            BLOCKED_COLOR,
+            AIRLOCK_BLOCKED_COLOR,
             "the airlock is green with the whole level still to work"
         );
 
@@ -371,55 +323,29 @@ mod tests {
         );
     }
 
-    /// The hatch is the way to give up on a run that has been worked, so it is
-    /// held shut until the breaches are sealed — but not until the panel is,
-    /// which is what the airlock is for.
+    /// The way out is the way in: a run opens with the player stood at it.
     #[test]
-    fn the_hatch_waits_for_the_breaches_and_the_airlock_for_everything() {
-        let room = Level::Rocket.rooms()[0];
-        let mut progress = LevelProgress::new(Level::Rocket);
-        assert!(
-            progress.total_portals > 0,
-            "the rocket needs breaches for this to be worth asking"
-        );
-
-        let hatch_open = |progress: &LevelProgress| progress.all_portals_completed();
-        let airlock_open = |progress: &LevelProgress, panel_solved: bool| {
-            progress.all_obstacles_completed(Level::Rocket, room, panel_solved)
-        };
-
-        // The panel alone opens neither: the breaches are still out there.
-        assert!(!hatch_open(&progress));
-        assert!(!airlock_open(&progress, false));
-        assert!(!airlock_open(&progress, true));
-
-        // The breaches are the hatch's whole bar, and only half the airlock's.
-        progress.completed_portals = progress.total_portals;
-        assert!(hatch_open(&progress));
-        assert!(!airlock_open(&progress, false));
-        assert!(airlock_open(&progress, true));
-    }
-
-    /// The way back out is the way in: a run opens with the player stood at it.
-    #[test]
-    fn the_hatch_is_at_the_entrance_the_run_opens_at() {
-        let hatch = Level::Rocket
+    fn the_airlock_is_at_the_entrance_the_run_opens_at() {
+        let airlock = Level::Rocket
             .doors()
             .iter()
-            .find(|door| door.kind == DoorKind::Hatch)
+            .find(|door| door.kind == DoorKind::Airlock)
             .copied()
-            .expect("the rocket has no hatch to leave by");
+            .expect("the rocket has no airlock to leave by");
         let spawn = Level::Rocket.player_spawn();
 
         assert!(
-            spawn.y > hatch.sill() && spawn.y < hatch.lintel(),
-            "the run opens on a different deck from the hatch"
+            spawn.y > airlock.sill() && spawn.y < airlock.lintel(),
+            "the run opens on a different deck from the airlock"
         );
         assert!(
-            hatch.in_reach(spawn),
-            "the run does not open within reach of the hatch it boarded through"
+            airlock.in_reach(spawn),
+            "the run does not open within reach of the airlock it boarded through"
         );
-        assert!(hatch.locked, "the hatch starts open to be walked out of");
+        assert!(
+            airlock.locked,
+            "the airlock starts unlocked rather than shut until the run is worked"
+        );
     }
 
     #[test]

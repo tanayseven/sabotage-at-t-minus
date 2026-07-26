@@ -3,6 +3,7 @@ mod config;
 mod countdown;
 mod credits;
 mod door;
+mod font;
 mod gameover;
 mod ladder;
 mod launchpad;
@@ -39,7 +40,8 @@ use crate::camera::{apply_level_camera, follow_player, reset_camera, setup_camer
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
-use crate::door::{leave_through_airlock, leave_through_hatch, sync_locked_doors, use_doors};
+use crate::door::{leave_through_airlock, sync_airlock_lock_state, use_doors};
+use crate::font::FontPlugin;
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::ladder::climb_ladder;
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
@@ -88,6 +90,7 @@ fn main() {
             ..default()
         }),
         RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER),
+        FontPlugin,
     ));
 
     #[cfg(feature = "dev")]
@@ -171,13 +174,13 @@ fn main() {
         // chained in that order rather than racing.
         .add_systems(
             Update,
-            (use_doors, leave_through_airlock, leave_through_hatch)
+            (use_doors, leave_through_airlock)
                 .chain()
                 .run_if(in_state(PlayingState::Running)),
         )
         .add_systems(
             Update,
-            sync_locked_doors.run_if(in_state(PlayingState::Running)),
+            sync_airlock_lock_state.run_if(in_state(PlayingState::Running)),
         )
         // `E` throws a switch as well as working a door, and the panel is
         // mounted where the two are never both in reach, so these can share the
