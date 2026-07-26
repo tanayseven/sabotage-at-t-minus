@@ -20,9 +20,10 @@
 use bevy::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH};
-use crate::level::{Level, LevelProgress, Room, RoomCodes};
+use crate::level::{Level, LevelProgress, ROOMS_PER_DECK, Room, RoomCodes};
 use crate::player::Player;
 use crate::puzzles::{RocketPuzzles, scramble};
+use crate::settings::Settings;
 use crate::ui::MUTED_TEXT;
 
 /// How many switches a panel has. The combination is one bit per switch, so
@@ -94,8 +95,11 @@ pub struct Panel {
 }
 
 impl Default for Panel {
+    /// A placeholder dealt over Medium's room count — every run overwrites
+    /// this before it is ever read, the same way [`RocketPuzzles::default`]
+    /// does.
     fn default() -> Self {
-        Self::from_seed(0)
+        Self::from_seed(0, 4 * ROOMS_PER_DECK)
     }
 }
 
@@ -110,9 +114,9 @@ impl Panel {
     /// never from all eight: the switches are spawned down, and a combination of
     /// all-down would be a panel that was solved before the player had found the
     /// room it is in.
-    pub fn from_seed(seed: u64) -> Self {
+    pub fn from_seed(seed: u64, room_count: usize) -> Self {
         let bits = scramble(seed);
-        let room = RocketPuzzles::from_seed(seed).panel_room;
+        let room = RocketPuzzles::from_seed(seed, room_count).panel_room;
 
         let settings = (1u64 << SWITCH_COUNT) - 1;
         let pattern = 1 + scramble(bits) % settings;
@@ -152,8 +156,14 @@ impl Panel {
     /// The panel says which room it is in and whether it has been set. The
     /// breaches only say how many are left: they are lit, they pulse, and the
     /// crossing goes through every room, so they are met rather than looked for.
-    fn status(&self, codes: &RoomCodes, level: Level, progress: &LevelProgress) -> String {
-        let mut line = if level.rooms().contains(&self.room) {
+    fn status(
+        &self,
+        codes: &RoomCodes,
+        level: Level,
+        deck_count: usize,
+        progress: &LevelProgress,
+    ) -> String {
+        let mut line = if level.has_room(deck_count, self.room) {
             let state = if self.solved { "SET" } else { "UNSET" };
 
             format!(
@@ -248,9 +258,10 @@ pub fn spawn_panel(
     commands: &mut Commands,
     panel: &Panel,
     level: Level,
+    deck_count: usize,
     marker: impl Bundle + Clone,
 ) {
-    if !level.rooms().contains(&panel.room) {
+    if !level.has_room(deck_count, panel.room) {
         return;
     }
 
@@ -421,13 +432,14 @@ pub fn spawn_panel_status(
     parent: &mut ChildSpawnerCommands,
     codes: &RoomCodes,
     level: Level,
+    deck_count: usize,
     panel: &Panel,
     progress: &LevelProgress,
     font_size: f32,
 ) {
     parent.spawn((
         PanelStatus,
-        Text::new(panel.status(codes, level, progress)),
+        Text::new(panel.status(codes, level, deck_count, progress)),
         TextFont {
             font_size: FontSize::Px(font_size),
             ..default()
@@ -439,6 +451,7 @@ pub fn spawn_panel_status(
 pub fn sync_panel_status(
     codes: Res<RoomCodes>,
     level: Res<Level>,
+    settings: Res<Settings>,
     panel: Res<Panel>,
     progress: Res<LevelProgress>,
     mut labels: Query<&mut Text, With<PanelStatus>>,
@@ -447,28 +460,36 @@ pub fn sync_panel_status(
         return;
     }
 
+    let deck_count = settings.difficulty.deck_count();
+
     for mut text in &mut labels {
-        **text = panel.status(&codes, *level, &progress);
+        **text = panel.status(&codes, *level, deck_count, &progress);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::level::ROOM_COUNT;
+
+    const TEST_DECK_COUNT: usize = 4;
+    const TEST_ROOM_COUNT: usize = TEST_DECK_COUNT * ROOMS_PER_DECK;
+
+    fn panel_from_seed(seed: u64) -> Panel {
+        Panel::from_seed(seed, TEST_ROOM_COUNT)
+    }
 
     /// Every room has to be one the panel can turn up in, and every setting bar
     /// all-down one it can ask for — otherwise a run's opening is narrower than
     /// it looks. Walked over enough seeds to see the whole of both.
     #[test]
     fn every_room_and_every_workable_combination_comes_up() {
-        let mut rooms = [false; ROOM_COUNT];
+        let mut rooms = [false; TEST_ROOM_COUNT];
         let mut combinations = [false; 1 << SWITCH_COUNT];
 
         for seed in 0..2_000u64 {
-            let panel = Panel::from_seed(seed);
+            let panel = panel_from_seed(seed);
 
-            let room = (0..ROOM_COUNT)
+            let room = (0..TEST_ROOM_COUNT)
                 .position(|index| Room::from_index(index) == panel.room)
                 .expect("the panel picked a room that is not in the rocket");
             rooms[room] = true;
@@ -497,14 +518,14 @@ mod tests {
     #[test]
     fn seeds_a_moment_apart_give_different_panels() {
         let seed = 1_234_567_890_u64;
-        let differ = (1..=8).filter(|step| Panel::from_seed(seed + step) != Panel::from_seed(seed));
+        let differ = (1..=8).filter(|step| panel_from_seed(seed + step) != panel_from_seed(seed));
 
         assert!(differ.count() >= 6, "the pick barely moves between seeds");
     }
 
     #[test]
     fn a_panel_starts_unsolved_and_needs_its_own_combination() {
-        let panel = Panel::from_seed(7);
+        let panel = panel_from_seed(7);
 
         assert!(!panel.solved);
         assert!(!panel.matched([false; SWITCH_COUNT]));
@@ -516,7 +537,7 @@ mod tests {
     /// three switches would be one switch worked three times.
     #[test]
     fn each_switch_is_worked_from_in_front_of_it() {
-        let panel = Panel::from_seed(0);
+        let panel = panel_from_seed(0);
         let mount = panel.room.fixture();
         let standing = working_positions(&panel);
 
@@ -538,14 +559,14 @@ mod tests {
     /// bulkhead every time the player touched the panel.
     #[test]
     fn a_panel_is_never_in_reach_of_a_door() {
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let panel = Panel {
                 room: Room::from_index(index),
-                ..Panel::from_seed(0)
+                ..panel_from_seed(0)
             };
 
             for at in working_positions(&panel) {
-                for door in Level::Rocket.doors() {
+                for door in Level::Rocket.doors(TEST_DECK_COUNT) {
                     assert!(
                         !door.in_reach(at),
                         "the panel in {} is worked from the same spot as {door:?}",
@@ -560,14 +581,14 @@ mod tests {
     /// nobody should have to stand in the ladder's hold to work a switch.
     #[test]
     fn a_panel_is_clear_of_the_ladders_and_the_hull() {
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let panel = Panel {
                 room: Room::from_index(index),
-                ..Panel::from_seed(0)
+                ..panel_from_seed(0)
             };
             let plate = plate_bounds(&panel);
 
-            for ladder in Level::Rocket.ladders() {
+            for ladder in Level::Rocket.ladders(TEST_DECK_COUNT) {
                 let column = ladder.reach();
                 let clear = plate.max.x <= column.min.x || plate.min.x >= column.max.x;
 
@@ -579,7 +600,7 @@ mod tests {
                 );
             }
 
-            for wall in Level::Rocket.walls() {
+            for wall in Level::Rocket.walls(TEST_DECK_COUNT) {
                 assert!(
                     plate.max.x < wall.centre.x || plate.min.x > wall.centre.x,
                     "the panel in {} is hung through a wall",
@@ -595,11 +616,11 @@ mod tests {
     fn a_panel_hangs_inside_its_own_room() {
         use crate::config::PLATFORM_HEIGHT;
 
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
             let panel = Panel {
                 room,
-                ..Panel::from_seed(0)
+                ..panel_from_seed(0)
             };
             let plate = plate_bounds(&panel);
             let deck_above = Room::from_index(index).floor() + DECK_HEIGHT_FOR_TESTS;
@@ -624,10 +645,10 @@ mod tests {
     #[test]
     fn the_panel_is_always_in_a_room_of_the_run() {
         for seed in 0..256u64 {
-            let panel = Panel::from_seed(seed);
+            let panel = panel_from_seed(seed);
 
             assert!(
-                Level::Rocket.rooms().contains(&panel.room),
+                Level::Rocket.has_room(TEST_DECK_COUNT, panel.room),
                 "seed {seed} put the panel outside the rocket"
             );
         }
@@ -653,7 +674,7 @@ mod tests {
                 app.insert_resource(panel);
                 app.insert_resource(ButtonInput::<KeyCode>::default());
                 app.add_systems(Startup, |mut commands: Commands, panel: Res<Panel>| {
-                    spawn_panel(&mut commands, &panel, Level::Rocket, ());
+                    spawn_panel(&mut commands, &panel, Level::Rocket, TEST_DECK_COUNT, ());
                 });
                 app.add_systems(Update, (flip_switches, light_panel).chain());
                 app.update();
@@ -725,7 +746,7 @@ mod tests {
 
         #[test]
         fn a_panel_is_built_with_three_switches_and_three_lamps_all_dark() {
-            let mut bench = Bench::with(Panel::from_seed(3));
+            let mut bench = Bench::with(panel_from_seed(3));
 
             assert_eq!(bench.switches(), [false; SWITCH_COUNT]);
             assert!(!bench.lamps_lit(), "the lamps are lit on an unsolved panel");
@@ -742,7 +763,7 @@ mod tests {
 
         #[test]
         fn a_press_at_a_switch_throws_that_switch_and_no_other() {
-            let panel = Panel::from_seed(3);
+            let panel = panel_from_seed(3);
             let mut bench = Bench::with(panel);
             let standing = working_positions(&panel);
 
@@ -753,7 +774,7 @@ mod tests {
 
         #[test]
         fn a_press_away_from_the_panel_throws_nothing() {
-            let panel = Panel::from_seed(3);
+            let panel = panel_from_seed(3);
             let mut bench = Bench::with(panel);
 
             bench.throw(panel.room.fixture() + Vec2::new(400.0, 0.0));
@@ -767,7 +788,7 @@ mod tests {
         #[test]
         fn setting_the_combination_solves_the_room_and_lights_the_lamps() {
             for seed in 0..24u64 {
-                let panel = Panel::from_seed(seed);
+                let panel = panel_from_seed(seed);
                 let mut bench = Bench::with(panel);
                 let standing = working_positions(&panel);
 
@@ -794,7 +815,7 @@ mod tests {
         fn a_partial_or_wrong_setting_leaves_the_room_unsolved() {
             let panel = Panel {
                 combination: [true, false, true],
-                ..Panel::from_seed(0)
+                ..panel_from_seed(0)
             };
             let standing = working_positions(&panel);
 
@@ -818,7 +839,7 @@ mod tests {
         fn a_solved_panel_cannot_be_thrown_back_out() {
             let panel = Panel {
                 combination: [false, true, false],
-                ..Panel::from_seed(0)
+                ..panel_from_seed(0)
             };
             let standing = working_positions(&panel);
             let mut bench = Bench::with(panel);

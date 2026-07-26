@@ -1,10 +1,10 @@
 //! The level a run is made of.
 //!
-//! A run is the rocket: eight rooms with a job in three of them, and the airlock
-//! back at the drop point. The airlock is the way the player came in and the way
-//! back out, and working it is what finishes the run — there is nothing after the
-//! rocket, so what was once a doorway onto the next level is now the end of the
-//! mission.
+//! A run is the rocket: however many rooms the chosen difficulty deals, with a
+//! job in three of them, and the airlock back at the drop point. The airlock
+//! is the way the player came in and the way back out, and working it is what
+//! finishes the run — there is nothing after the rocket, so what was once a
+//! doorway onto the next level is now the end of the mission.
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -15,6 +15,7 @@ use crate::ladder::{LADDER_CLEARANCE, Ladder};
 use crate::minigames::{CompletedMinigame, MinigameOutcome};
 use crate::platform::Platform;
 use crate::portal::TriggeredPortal;
+use crate::settings::Settings;
 use crate::state::PlayingState;
 use crate::wall::Wall;
 
@@ -56,16 +57,16 @@ impl CameraMode {
 
 /// The layout of a level. The breaches are not in it: they stand in whichever
 /// rooms the run dealt them, which is [`crate::puzzles::RocketPuzzles`]'s to say
-/// rather than the layout's.
-#[derive(Clone, Copy)]
+/// rather than the layout's. Owned rather than `&'static` slices: how many
+/// decks the rocket has is picked per run, so the geometry is built fresh each
+/// time rather than living in a `const`.
+#[derive(Clone)]
 pub struct LevelConfig {
-    pub platforms: &'static [Platform],
-    pub walls: &'static [Wall],
-    pub ladders: &'static [Ladder],
-    pub doors: &'static [Door],
-    pub crates: &'static [Vec2],
-    pub player_spawn: Vec2,
-    pub camera: CameraMode,
+    pub platforms: Vec<Platform>,
+    pub walls: Vec<Wall>,
+    pub ladders: Vec<Ladder>,
+    pub doors: Vec<Door>,
+    pub crates: Vec<Vec2>,
 }
 
 /// How much of the run's breach objective has been sealed.
@@ -76,9 +77,9 @@ pub struct LevelProgress {
 }
 
 impl LevelProgress {
-    pub fn new(level: Level) -> Self {
+    pub fn new(level: Level, deck_count: usize) -> Self {
         Self {
-            total_portals: level.portal_count(),
+            total_portals: level.portal_count(deck_count),
             completed_portals: 0,
         }
     }
@@ -97,10 +98,11 @@ impl LevelProgress {
     pub fn all_obstacles_completed(
         &self,
         level: Level,
+        deck_count: usize,
         panel_room: Room,
         panel_solved: bool,
     ) -> bool {
-        let panel_done = if level.rooms().contains(&panel_room) {
+        let panel_done = if level.has_room(deck_count, panel_room) {
             panel_solved
         } else {
             true
@@ -122,11 +124,6 @@ const HULL_RIGHT: f32 = 600.0;
 const BULKHEAD_X: f32 = 0.0;
 
 const DECK_HEIGHT: f32 = 260.0;
-const DECK_0: f32 = GROUND_TOP;
-const DECK_1: f32 = DECK_0 + DECK_HEIGHT;
-const DECK_2: f32 = DECK_1 + DECK_HEIGHT;
-const DECK_3: f32 = DECK_2 + DECK_HEIGHT;
-const ROCKET_CEILING: f32 = DECK_3 + DECK_HEIGHT;
 
 const LOWER_LADDER_X: f32 = 400.0;
 const UPPER_LADDER_X: f32 = -400.0;
@@ -137,75 +134,143 @@ const LADDER_GAP: f32 = LADDER_CLEARANCE;
 /// the rooms rather than a one-way climb.
 const AIRLOCK_X: f32 = HULL_LEFT + WALL_THICKNESS / 2.0;
 
-const fn plate(from: f32, to: f32, top: f32) -> Platform {
+/// The floor plate of the `deck`th deck up from the ground.
+const fn deck_floor(deck: usize) -> f32 {
+    GROUND_TOP + deck as f32 * DECK_HEIGHT
+}
+
+/// One past the top deck's floor — the underside of the hull's roof, however
+/// many decks the rocket was dealt.
+const fn rocket_ceiling(deck_count: usize) -> f32 {
+    deck_floor(deck_count)
+}
+
+/// Where the ladder connecting deck `boundary` to deck `boundary + 1` stands.
+/// Alternates side each boundary up, so the walking route zig-zags rather than
+/// climbing the same side of the hull twice running.
+const fn ladder_x(boundary: usize) -> f32 {
+    if boundary.is_multiple_of(2) {
+        LOWER_LADDER_X
+    } else {
+        UPPER_LADDER_X
+    }
+}
+
+const AIRLOCK: Door = Door::airlock(AIRLOCK_X, deck_floor(0));
+
+const fn bulkhead_door(deck: usize) -> Door {
+    Door::bulkhead(BULKHEAD_X, deck_floor(deck))
+}
+
+fn plate(from: f32, to: f32, top: f32) -> Platform {
     Platform::with_top((from + to) / 2.0, top, to - from)
 }
 
-const ROCKET_PLATFORMS: [Platform; 8] = [
-    plate(HULL_LEFT, HULL_RIGHT, DECK_0),
-    plate(HULL_LEFT, LOWER_LADDER_X - LADDER_GAP / 2.0, DECK_1),
-    plate(LOWER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_1),
-    plate(HULL_LEFT, UPPER_LADDER_X - LADDER_GAP / 2.0, DECK_2),
-    plate(UPPER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_2),
-    plate(HULL_LEFT, LOWER_LADDER_X - LADDER_GAP / 2.0, DECK_3),
-    plate(LOWER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_3),
-    plate(HULL_LEFT, HULL_RIGHT, ROCKET_CEILING),
-];
+/// The bottom deck spans the whole hull unsplit — there is no floor below it
+/// for a ladder to come up through. Every deck above it is split around
+/// whichever ladder pierces its floor from the one below, and the roof over
+/// the top deck is unsplit again, since nothing climbs past it.
+fn rocket_platforms(deck_count: usize) -> Vec<Platform> {
+    let mut platforms = Vec::with_capacity(deck_count * 2);
 
-const DECK_0_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_0);
-const DECK_1_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_1);
-const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
-const DECK_3_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_3);
-const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_0);
+    platforms.push(plate(HULL_LEFT, HULL_RIGHT, deck_floor(0)));
 
-const ROCKET_DOORS: [Door; 5] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, DECK_3_DOOR, AIRLOCK];
+    for deck in 1..deck_count {
+        let x = ladder_x(deck - 1);
+        let floor = deck_floor(deck);
+        platforms.push(plate(HULL_LEFT, x - LADDER_GAP / 2.0, floor));
+        platforms.push(plate(x + LADDER_GAP / 2.0, HULL_RIGHT, floor));
+    }
 
-const ROCKET_WALLS: [Wall; 6] = [
-    Wall::between(HULL_LEFT, DECK_0, ROCKET_CEILING),
-    Wall::between(HULL_RIGHT, DECK_0, ROCKET_CEILING),
-    Wall::between(BULKHEAD_X, DECK_0_DOOR.lintel(), DECK_1 - PLATFORM_HEIGHT),
-    Wall::between(BULKHEAD_X, DECK_1_DOOR.lintel(), DECK_2 - PLATFORM_HEIGHT),
-    Wall::between(BULKHEAD_X, DECK_2_DOOR.lintel(), DECK_3 - PLATFORM_HEIGHT),
-    Wall::between(
-        BULKHEAD_X,
-        DECK_3_DOOR.lintel(),
-        ROCKET_CEILING - PLATFORM_HEIGHT,
-    ),
-];
+    platforms.push(plate(HULL_LEFT, HULL_RIGHT, rocket_ceiling(deck_count)));
 
-const ROCKET_LADDERS: [Ladder; 3] = [
-    Ladder::new(LOWER_LADDER_X, DECK_0, DECK_1),
-    Ladder::new(UPPER_LADDER_X, DECK_1, DECK_2),
-    Ladder::new(LOWER_LADDER_X, DECK_2, DECK_3),
-];
+    platforms
+}
 
-const ROCKET_CRATES: [Vec2; 5] = [
-    Vec2::new(-300.0, DECK_0 + 140.0),
-    Vec2::new(200.0, DECK_1 + 140.0),
-    Vec2::new(-180.0, DECK_2 + 140.0),
-    Vec2::new(-520.0, DECK_2 + 140.0),
-    Vec2::new(200.0, DECK_3 + 140.0),
-];
+/// A bulkhead door on every deck, plus the airlock out on the bottom one.
+fn rocket_doors(deck_count: usize) -> Vec<Door> {
+    let mut doors: Vec<Door> = (0..deck_count).map(bulkhead_door).collect();
+    doors.push(AIRLOCK);
+    doors
+}
 
-const ROCKET_SPAWN: Vec2 = Vec2::new(HULL_LEFT + 120.0, DECK_0 + 60.0);
+/// The outer hull, plus a bulkhead wall segment per deck gapped for that
+/// deck's door.
+fn rocket_walls(deck_count: usize) -> Vec<Wall> {
+    let ceiling = rocket_ceiling(deck_count);
+    let mut walls = vec![
+        Wall::between(HULL_LEFT, deck_floor(0), ceiling),
+        Wall::between(HULL_RIGHT, deck_floor(0), ceiling),
+    ];
 
-const ROCKET_CONFIG: LevelConfig = LevelConfig {
-    platforms: &ROCKET_PLATFORMS,
-    walls: &ROCKET_WALLS,
-    ladders: &ROCKET_LADDERS,
-    doors: &ROCKET_DOORS,
-    crates: &ROCKET_CRATES,
-    player_spawn: ROCKET_SPAWN,
-    camera: CameraMode::Follow {
+    for deck in 0..deck_count {
+        let door = bulkhead_door(deck);
+        let next_floor = if deck + 1 == deck_count {
+            ceiling
+        } else {
+            deck_floor(deck + 1)
+        };
+
+        walls.push(Wall::between(
+            BULKHEAD_X,
+            door.lintel(),
+            next_floor - PLATFORM_HEIGHT,
+        ));
+    }
+
+    walls
+}
+
+/// One ladder per gap between consecutive decks.
+fn rocket_ladders(deck_count: usize) -> Vec<Ladder> {
+    (0..deck_count - 1)
+        .map(|boundary| {
+            Ladder::new(
+                ladder_x(boundary),
+                deck_floor(boundary),
+                deck_floor(boundary + 1),
+            )
+        })
+        .collect()
+}
+
+/// Decoration only, one per deck, alternating side.
+fn rocket_crates(deck_count: usize) -> Vec<Vec2> {
+    (0..deck_count)
+        .map(|deck| {
+            let x = if deck.is_multiple_of(2) {
+                -300.0
+            } else {
+                200.0
+            };
+            Vec2::new(x, deck_floor(deck) + 140.0)
+        })
+        .collect()
+}
+
+const ROCKET_SPAWN: Vec2 = Vec2::new(HULL_LEFT + 120.0, deck_floor(0) + 60.0);
+
+fn rocket_camera(deck_count: usize) -> CameraMode {
+    CameraMode::Follow {
         zoom: INTERIOR_ZOOM,
         bounds: Rect::new(
             HULL_LEFT - WALL_THICKNESS,
-            DECK_0 - PLATFORM_HEIGHT,
+            deck_floor(0) - PLATFORM_HEIGHT,
             HULL_RIGHT + WALL_THICKNESS,
-            ROCKET_CEILING,
+            rocket_ceiling(deck_count),
         ),
-    },
-};
+    }
+}
+
+fn rocket_config(deck_count: usize) -> LevelConfig {
+    LevelConfig {
+        platforms: rocket_platforms(deck_count),
+        walls: rocket_walls(deck_count),
+        ladders: rocket_ladders(deck_count),
+        doors: rocket_doors(deck_count),
+        crates: rocket_crates(deck_count),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // The rooms themselves
@@ -234,15 +299,10 @@ impl Side {
     }
 }
 
-/// How many decks the rocket has, and how many rooms the bulkhead cuts each of
-/// them into.
-pub const DECK_COUNT: usize = 4;
-const ROOMS_PER_DECK: usize = 2;
-/// Every room in the rocket, which is what anything picking one at random works
-/// against.
-pub const ROOM_COUNT: usize = DECK_COUNT * ROOMS_PER_DECK;
+/// How many rooms the bulkhead cuts each deck into.
+pub(crate) const ROOMS_PER_DECK: usize = 2;
 
-/// One of the rocket's eight rooms: the stretch of a deck on one side of the
+/// One of the rocket's rooms: the stretch of a deck on one side of the
 /// bulkhead. Described by which deck and which side rather than by its corners,
 /// because that is what a room *is* here — the plates, the hull and the
 /// bulkhead already say where the walls are, and a second copy of those numbers
@@ -279,19 +339,21 @@ const ROOM_CODE_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 /// room index lists the rooms under, and so how a player turns the code the HUD
 /// gives them into somewhere to walk.
 ///
-/// Drawn when the game starts rather than written down here, so the codes are
-/// not something a player can learn once and then stop opening the manual.
+/// Drawn fresh at the start of every run rather than written down here, so the
+/// codes are not something a player can learn once and then stop opening the
+/// manual — and sized to that run's room count, since how many decks the
+/// rocket has is picked per run too.
 #[derive(Resource, Debug, Clone, PartialEq, Eq)]
-pub struct RoomCodes([String; ROOM_COUNT]);
+pub struct RoomCodes(Vec<String>);
 
 impl RoomCodes {
-    /// Distinct codes, because the whole use of a code is telling one room from
-    /// the other seven.
-    pub fn random() -> Self {
+    /// Distinct codes, because the whole use of a code is telling one room
+    /// from the rest of them.
+    pub fn random(room_count: usize) -> Self {
         let mut rng = rand::thread_rng();
-        let mut codes: Vec<String> = Vec::with_capacity(ROOM_COUNT);
+        let mut codes: Vec<String> = Vec::with_capacity(room_count);
 
-        while codes.len() < ROOM_COUNT {
+        while codes.len() < room_count {
             let code: String = (0..ROOM_CODE_LEN)
                 .map(|_| {
                     let pick = rng.gen_range(0..ROOM_CODE_ALPHABET.len());
@@ -311,11 +373,7 @@ impl RoomCodes {
             }
         }
 
-        Self(
-            codes
-                .try_into()
-                .expect("the loop above fills exactly ROOM_COUNT codes"),
-        )
+        Self(codes)
     }
 
     /// The code stencilled by this room's hatch, without its `#`.
@@ -370,7 +428,7 @@ impl Room {
 
     /// The deck plate the room is floored with — the surface walked on.
     pub const fn floor(self) -> f32 {
-        DECK_0 + self.deck as f32 * DECK_HEIGHT
+        deck_floor(self.deck)
     }
 
     /// Where a wall fixture is mounted in this room, given as the point on the
@@ -421,16 +479,11 @@ impl Room {
     }
 }
 
-const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
-    Room::from_index(0),
-    Room::from_index(1),
-    Room::from_index(2),
-    Room::from_index(3),
-    Room::from_index(4),
-    Room::from_index(5),
-    Room::from_index(6),
-    Room::from_index(7),
-];
+fn rocket_rooms(deck_count: usize) -> Vec<Room> {
+    (0..deck_count * ROOMS_PER_DECK)
+        .map(Room::from_index)
+        .collect()
+}
 
 impl Level {
     /// How the level is named to the player, in the same terms the launch pad
@@ -441,41 +494,53 @@ impl Level {
         }
     }
 
-    pub fn config(self) -> LevelConfig {
+    pub fn config(self, deck_count: usize) -> LevelConfig {
         match self {
-            Level::Rocket => ROCKET_CONFIG,
+            Level::Rocket => rocket_config(deck_count),
         }
     }
 
-    pub fn platforms(self) -> &'static [Platform] {
-        self.config().platforms
+    pub fn platforms(self, deck_count: usize) -> Vec<Platform> {
+        self.config(deck_count).platforms
     }
 
-    pub fn walls(self) -> &'static [Wall] {
-        self.config().walls
+    pub fn walls(self, deck_count: usize) -> Vec<Wall> {
+        self.config(deck_count).walls
     }
 
-    pub fn ladders(self) -> &'static [Ladder] {
-        self.config().ladders
+    pub fn ladders(self, deck_count: usize) -> Vec<Ladder> {
+        self.config(deck_count).ladders
     }
 
-    pub fn doors(self) -> &'static [Door] {
-        self.config().doors
+    pub fn doors(self, deck_count: usize) -> Vec<Door> {
+        self.config(deck_count).doors
     }
 
     /// The rooms the level is divided into.
-    pub fn rooms(self) -> &'static [Room] {
+    pub fn rooms(self, deck_count: usize) -> Vec<Room> {
         match self {
-            Level::Rocket => &ROCKET_ROOMS,
+            Level::Rocket => rocket_rooms(deck_count),
         }
     }
 
-    pub fn crates(self) -> &'static [Vec2] {
-        self.config().crates
+    /// Whether `room` is one of this level's, at this run's deck count.
+    /// Cheaper than `self.rooms(deck_count).contains(&room)` for the systems
+    /// that ask on every frame a value changes — no room list to build just to
+    /// throw away.
+    pub fn has_room(self, deck_count: usize, room: Room) -> bool {
+        match self {
+            Level::Rocket => room.deck < deck_count,
+        }
+    }
+
+    pub fn crates(self, deck_count: usize) -> Vec<Vec2> {
+        self.config(deck_count).crates
     }
 
     pub fn player_spawn(self) -> Vec2 {
-        self.config().player_spawn
+        match self {
+            Level::Rocket => ROCKET_SPAWN,
+        }
     }
 
     /// How many breaches this level puts up, which is what the objective counts
@@ -483,21 +548,23 @@ impl Level {
     /// to be dealt.
     /// One breach per room, so there is something to work wherever the player
     /// goes and the airlock waits on all of them.
-    pub fn portal_count(self) -> usize {
+    pub fn portal_count(self, deck_count: usize) -> usize {
         match self {
-            Level::Rocket => self.rooms().len(),
+            Level::Rocket => deck_count * ROOMS_PER_DECK,
         }
     }
 
-    pub fn camera(self) -> CameraMode {
-        self.config().camera
+    pub fn camera(self, deck_count: usize) -> CameraMode {
+        match self {
+            Level::Rocket => rocket_camera(deck_count),
+        }
     }
 
     /// The stretch of level the hull lining is papered over. Taken from what the
     /// camera can reach rather than from the hull itself, so a pan that runs to
     /// the edge of the level shows plating rather than the void behind it.
-    pub fn interior(self) -> Rect {
-        match self.camera() {
+    pub fn interior(self, deck_count: usize) -> Rect {
+        match self.camera(deck_count) {
             CameraMode::Follow { bounds, .. } => bounds,
             CameraMode::Fixed => {
                 Rect::from_center_size(Vec2::ZERO, Vec2::new(DESIGN_WIDTH, DESIGN_HEIGHT))
@@ -507,9 +574,15 @@ impl Level {
 }
 
 /// Inserted rather than assigned, so change detection fires — and the camera
-/// re-frames — every time a run starts.
-pub fn reset_level(mut commands: Commands) {
+/// re-frames — every time a run starts. The room codes are drawn here too,
+/// sized to the difficulty just chosen, rather than once at boot: the deck
+/// count varies run to run, and a stale set of codes would not even have one
+/// for every room.
+pub fn reset_level(mut commands: Commands, settings: Res<Settings>) {
+    let room_count = settings.difficulty.deck_count() * ROOMS_PER_DECK;
+
     commands.insert_resource(Level::default());
+    commands.insert_resource(RoomCodes::random(room_count));
 }
 
 /// Routes minigame outcomes through the level, which is where the rules about
@@ -547,19 +620,23 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, DECK_3, DECK_COUNT, DECK_HEIGHT,
-        Door, HULL_LEFT, HULL_RIGHT, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress,
-        ROOM_CODE_LEN, ROOM_COUNT, Room, RoomCodes, UPPER_LADDER_X,
+        AIRLOCK, BULKHEAD_X, CameraMode, DECK_HEIGHT, Door, HULL_LEFT, HULL_RIGHT, LADDER_GAP,
+        Level, LevelProgress, ROOM_CODE_LEN, ROOMS_PER_DECK, Room, RoomCodes, deck_floor, ladder_x,
     };
     use crate::config::PLAYER_HEIGHT;
+
+    /// The whole test module works against a fixed deck count, standing in
+    /// for whichever difficulty a real run picks.
+    const TEST_DECK_COUNT: usize = 4;
+    const TEST_ROOM_COUNT: usize = TEST_DECK_COUNT * ROOMS_PER_DECK;
 
     /// The codes are the only thing telling one room from another in the HUD,
     /// and the manual is only worth opening if they read as markings.
     #[test]
     fn room_codes_are_distinct_markings() {
         for _ in 0..32 {
-            let codes = RoomCodes::random();
-            let drawn: Vec<&str> = (0..ROOM_COUNT)
+            let codes = RoomCodes::random(TEST_ROOM_COUNT);
+            let drawn: Vec<&str> = (0..TEST_ROOM_COUNT)
                 .map(|index| codes.of(Room::from_index(index)))
                 .collect();
 
@@ -591,7 +668,7 @@ mod tests {
     /// breach mounted further out.
     #[test]
     fn every_room_signs_itself_inside_its_own_walls() {
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
             let board = room.sign();
 
@@ -622,10 +699,13 @@ mod tests {
     /// way back out rather than a doorway onto somewhere else.
     #[test]
     fn the_rocket_is_the_whole_run() {
-        assert!(!Level::Rocket.walls().is_empty());
-        assert!(!Level::Rocket.ladders().is_empty());
+        assert!(!Level::Rocket.walls(TEST_DECK_COUNT).is_empty());
+        assert!(!Level::Rocket.ladders(TEST_DECK_COUNT).is_empty());
         // A bulkhead door per deck, plus the airlock out.
-        assert_eq!(Level::Rocket.doors().len(), DECK_COUNT + 1);
+        assert_eq!(
+            Level::Rocket.doors(TEST_DECK_COUNT).len(),
+            TEST_DECK_COUNT + 1
+        );
         assert_eq!(AIRLOCK.kind, crate::door::DoorKind::Airlock);
     }
 
@@ -637,8 +717,8 @@ mod tests {
     fn the_exit_is_where_the_run_starts() {
         let spawn = Level::Rocket.player_spawn();
         let exit = Level::Rocket
-            .doors()
-            .iter()
+            .doors(TEST_DECK_COUNT)
+            .into_iter()
             .find(|door| door.kind == crate::door::DoorKind::Airlock)
             .expect("the rocket has no way back out");
 
@@ -648,7 +728,7 @@ mod tests {
         );
         assert_eq!(
             exit.sill(),
-            DECK_0,
+            deck_floor(0),
             "the exit is not on the deck the run starts on"
         );
         assert!(
@@ -662,8 +742,84 @@ mod tests {
     /// by walking round the jobs.
     #[test]
     fn the_rocket_carries_a_breach_in_every_room() {
-        assert_eq!(Level::Rocket.portal_count(), ROOM_COUNT);
-        assert_eq!(Level::Rocket.rooms().len(), ROOM_COUNT);
+        assert_eq!(Level::Rocket.portal_count(TEST_DECK_COUNT), TEST_ROOM_COUNT);
+        assert_eq!(Level::Rocket.rooms(TEST_DECK_COUNT).len(), TEST_ROOM_COUNT);
+    }
+
+    /// The geometry is built fresh from whichever deck count a difficulty
+    /// deals, rather than off a fixed constant — so this is what holds every
+    /// tier, from Very Easy's two decks to Very Hard's six, to the shapes the
+    /// rest of the module only checks at one fixed count.
+    #[test]
+    fn the_rocket_s_geometry_holds_at_every_difficulty() {
+        use crate::difficulty::Difficulty;
+
+        for difficulty in Difficulty::ALL {
+            let deck_count = difficulty.deck_count();
+            let room_count = deck_count * ROOMS_PER_DECK;
+            let label = difficulty.label();
+
+            let platforms = Level::Rocket.platforms(deck_count);
+            let walls = Level::Rocket.walls(deck_count);
+            let ladders = Level::Rocket.ladders(deck_count);
+            let doors = Level::Rocket.doors(deck_count);
+            let rooms = Level::Rocket.rooms(deck_count);
+
+            // One ladder per gap between decks, a bulkhead door per deck plus
+            // the airlock, two plates per deck, and the outer hull plus one
+            // bulkhead wall segment per deck.
+            assert_eq!(ladders.len(), deck_count - 1, "{label}: wrong ladder count");
+            assert_eq!(doors.len(), deck_count + 1, "{label}: wrong door count");
+            assert_eq!(
+                platforms.len(),
+                deck_count * 2,
+                "{label}: wrong platform count"
+            );
+            assert_eq!(walls.len(), deck_count + 2, "{label}: wrong wall count");
+            assert_eq!(rooms.len(), room_count, "{label}: wrong room count");
+            assert_eq!(
+                Level::Rocket.portal_count(deck_count),
+                room_count,
+                "{label}: portal count does not match the room count"
+            );
+
+            // Every ladder actually reaches the deck above the one it starts
+            // on, and every bulkhead door stands on a deck the rocket has.
+            for ladder in &ladders {
+                assert!(
+                    ladder.head - ladder.foot > 0.0,
+                    "{label}: a ladder does not climb"
+                );
+            }
+            for door in &doors {
+                assert!(
+                    (0..deck_count).any(|deck| door.sill() == deck_floor(deck)),
+                    "{label}: a door stands on no deck of the rocket"
+                );
+            }
+
+            // The camera has to open on the drop point, whatever the hull
+            // ended up tall enough for.
+            let CameraMode::Follow { bounds, .. } = Level::Rocket.camera(deck_count) else {
+                panic!("{label}: the rocket is meant to use a following camera");
+            };
+            assert!(
+                bounds.contains(Level::Rocket.player_spawn()),
+                "{label}: the drop point is outside the camera bounds"
+            );
+
+            // Distinct codes for every room this difficulty actually has.
+            let codes = RoomCodes::random(room_count);
+            let drawn: Vec<&str> = (0..room_count)
+                .map(|index| codes.of(Room::from_index(index)))
+                .collect();
+            for (index, code) in drawn.iter().enumerate() {
+                assert!(
+                    !drawn[index + 1..].contains(code),
+                    "{label}: two rooms were stencilled {code:?}"
+                );
+            }
+        }
     }
 
     /// A breach is walked into rather than worked, so one hung out of the
@@ -674,7 +830,7 @@ mod tests {
         use crate::config::PLAYER_HEIGHT;
         use crate::portal::PORTAL_RADIUS;
 
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
             let breach = room.portal_mount();
             let walking_past = Vec2::new(breach.x, room.floor() + PLAYER_HEIGHT / 2.0);
@@ -694,11 +850,14 @@ mod tests {
     fn a_portal_is_clear_of_the_ladders_and_the_doors() {
         use crate::portal::PORTAL_RADIUS;
 
-        for index in 0..ROOM_COUNT {
+        let ladders = Level::Rocket.ladders(TEST_DECK_COUNT);
+        let doors = Level::Rocket.doors(TEST_DECK_COUNT);
+
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
             let breach = room.portal_mount();
 
-            for ladder in Level::Rocket.ladders() {
+            for ladder in &ladders {
                 let column = ladder.reach();
                 let clear = breach.x + PORTAL_RADIUS <= column.min.x
                     || breach.x - PORTAL_RADIUS >= column.max.x;
@@ -711,7 +870,7 @@ mod tests {
                 );
             }
 
-            for door in Level::Rocket.doors() {
+            for door in &doors {
                 assert!(
                     (breach.x - door.at.x).abs() > PORTAL_RADIUS,
                     "the breach in {} is opened across {door:?}",
@@ -724,7 +883,7 @@ mod tests {
     /// The run has to open with the whole of the drop point on screen.
     #[test]
     fn the_run_spawns_inside_the_camera_bounds() {
-        let CameraMode::Follow { bounds, .. } = Level::Rocket.camera() else {
+        let CameraMode::Follow { bounds, .. } = Level::Rocket.camera(TEST_DECK_COUNT) else {
             panic!("the rocket is meant to use a following camera");
         };
 
@@ -747,6 +906,7 @@ mod tests {
         use crate::player::{Player, jump, move_player, probe_ground};
         use crate::portal::{Portal, enter_portal};
         use crate::puzzles::RocketPuzzles;
+        use crate::settings::Settings;
         use crate::setup::{RunState, build_level};
         use crate::state::{GameState, PlayingState};
         use bevy::asset::AssetPlugin;
@@ -792,14 +952,18 @@ mod tests {
                 // type the app has never heard of.
                 app.init_asset::<Image>();
                 app.init_resource::<Level>();
+                app.init_resource::<Settings>();
                 app.add_systems(Startup, configure_physics);
                 // The panel is built along with the rest of it, and pinned to a
                 // seed so the crossing is run against a rocket with one in it
                 // rather than one where the pick happened to go elsewhere.
                 app.init_resource::<Panel>();
-                app.init_resource::<RocketPuzzles>();
-                app.insert_resource(LevelProgress::new(Level::Rocket));
-                app.insert_resource(RoomCodes::random());
+                app.insert_resource(RocketPuzzles::from_seed(
+                    0,
+                    TEST_DECK_COUNT * ROOMS_PER_DECK,
+                ));
+                app.insert_resource(LevelProgress::new(Level::Rocket, TEST_DECK_COUNT));
+                app.insert_resource(RoomCodes::random(TEST_ROOM_COUNT));
                 app.add_systems(
                     Startup,
                     |mut commands: Commands,
@@ -812,9 +976,10 @@ mod tests {
                             &mut commands,
                             &assets,
                             Level::Rocket,
+                            TEST_DECK_COUNT,
                             &codes,
                             RunState {
-                                puzzles: *puzzles,
+                                puzzles: puzzles.clone(),
                                 panel: *panel,
                                 progress: *progress,
                             },
@@ -957,66 +1122,66 @@ mod tests {
 
             // The bottom deck: walk out of the drop point into the bulkhead.
             let at = run.shut_out_by_the_door(D);
-            assert_shut_out(at, D, DECK_0, "deck 0");
+            assert_shut_out(at, D, deck_floor(0), "deck 0");
 
             // Work it, carry on, and take the ladder up.
             run.hold(&[E], 2);
             assert!(
-                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                run.hold_until(&[D], 600, |at| at.x >= ladder_x(0)),
                 "deck 0's door never let the player through to the lower ladder (stuck at {:?})",
                 run.at()
             );
             assert!(
-                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_1) - 1.0),
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(deck_floor(1)) - 1.0),
                 "the lower ladder never reached deck 1"
             );
 
             // Off the ladder onto solid plate, then back across to deck 1's door.
             assert!(
-                run.hold_until(&[A], 300, |at| at.x <= LOWER_LADDER_X - LADDER_GAP),
+                run.hold_until(&[A], 300, |at| at.x <= ladder_x(0) - LADDER_GAP),
                 "never stepped off the lower ladder onto deck 1"
             );
             let at = run.shut_out_by_the_door(A);
-            assert_shut_out(at, A, DECK_1, "deck 1");
+            assert_shut_out(at, A, deck_floor(1), "deck 1");
 
             // Through it and up the second ladder.
             run.hold(&[E], 2);
             assert!(
-                run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
+                run.hold_until(&[A], 600, |at| at.x <= ladder_x(1)),
                 "deck 1's door never let the player through to the upper ladder"
             );
             assert!(
-                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_2) - 1.0),
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(deck_floor(2)) - 1.0),
                 "the upper ladder never reached deck 2"
             );
 
             // Off it, across deck 2, and through its bulkhead to the third
             // ladder.
             assert!(
-                run.hold_until(&[D], 300, |at| at.x >= UPPER_LADDER_X + LADDER_GAP),
+                run.hold_until(&[D], 300, |at| at.x >= ladder_x(1) + LADDER_GAP),
                 "never stepped off the upper ladder onto deck 2"
             );
             let at = run.shut_out_by_the_door(D);
-            assert_shut_out(at, D, DECK_2, "deck 2");
+            assert_shut_out(at, D, deck_floor(2), "deck 2");
 
             run.hold(&[E], 2);
             assert!(
-                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                run.hold_until(&[D], 600, |at| at.x >= ladder_x(2)),
                 "deck 2's door never let the player through to the third ladder (stuck at {:?})",
                 run.at()
             );
             assert!(
-                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_3) - 1.0),
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(deck_floor(3)) - 1.0),
                 "the third ladder never reached deck 3"
             );
 
             // Off it, across the top deck, and through the last bulkhead.
             assert!(
-                run.hold_until(&[A], 300, |at| at.x <= LOWER_LADDER_X - LADDER_GAP),
+                run.hold_until(&[A], 300, |at| at.x <= ladder_x(2) - LADDER_GAP),
                 "never stepped off the third ladder onto deck 3"
             );
             let at = run.shut_out_by_the_door(A);
-            assert_shut_out(at, A, DECK_3, "deck 3");
+            assert_shut_out(at, A, deck_floor(3), "deck 3");
 
             run.hold(&[E], 2);
             assert!(
@@ -1029,27 +1194,27 @@ mod tests {
             // the end of it: back down all three ladders and along deck 0 to
             // the airlock the player was dropped in beside.
             assert!(
-                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                run.hold_until(&[D], 600, |at| at.x >= ladder_x(2)),
                 "never got back across deck 3 to the third ladder"
             );
             assert!(
-                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_2) + 1.0),
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(deck_floor(2)) + 1.0),
                 "the third ladder never brought the player back down to deck 2"
             );
             assert!(
-                run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
+                run.hold_until(&[A], 600, |at| at.x <= ladder_x(1)),
                 "never got back across deck 2 to the upper ladder"
             );
             assert!(
-                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_1) + 1.0),
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(deck_floor(1)) + 1.0),
                 "the upper ladder never brought the player back down to deck 1"
             );
             assert!(
-                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                run.hold_until(&[D], 600, |at| at.x >= ladder_x(0)),
                 "never crossed deck 1 back to the lower ladder"
             );
             assert!(
-                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_0) + 1.0),
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(deck_floor(0)) + 1.0),
                 "the lower ladder never brought the player back down to deck 0"
             );
             assert!(
@@ -1069,7 +1234,7 @@ mod tests {
             // airlock that never unlocks.
             assert_eq!(
                 run.breaches_met(),
-                Level::Rocket.portal_count(),
+                Level::Rocket.portal_count(TEST_DECK_COUNT),
                 "the crossing walked past a breach without triggering it"
             );
 
@@ -1093,18 +1258,38 @@ mod tests {
     /// *and* each breach.
     #[test]
     fn all_obstacles_require_panel_only_when_present() {
-        let rocket_progress = LevelProgress::new(Level::Rocket);
-        let rocket_room = Level::Rocket.rooms()[0];
+        let rocket_progress = LevelProgress::new(Level::Rocket, TEST_DECK_COUNT);
+        let rocket_room = Level::Rocket.rooms(TEST_DECK_COUNT)[0];
 
-        assert!(!rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, false));
+        assert!(!rocket_progress.all_obstacles_completed(
+            Level::Rocket,
+            TEST_DECK_COUNT,
+            rocket_room,
+            false
+        ));
         assert!(
-            !rocket_progress.all_obstacles_completed(Level::Rocket, rocket_room, true),
+            !rocket_progress.all_obstacles_completed(
+                Level::Rocket,
+                TEST_DECK_COUNT,
+                rocket_room,
+                true
+            ),
             "the panel alone opened the airlock with breaches still outstanding"
         );
 
-        let mut rocket_done = LevelProgress::new(Level::Rocket);
+        let mut rocket_done = LevelProgress::new(Level::Rocket, TEST_DECK_COUNT);
         rocket_done.completed_portals = rocket_done.total_portals;
-        assert!(!rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, false));
-        assert!(rocket_done.all_obstacles_completed(Level::Rocket, rocket_room, true));
+        assert!(!rocket_done.all_obstacles_completed(
+            Level::Rocket,
+            TEST_DECK_COUNT,
+            rocket_room,
+            false
+        ));
+        assert!(rocket_done.all_obstacles_completed(
+            Level::Rocket,
+            TEST_DECK_COUNT,
+            rocket_room,
+            true
+        ));
     }
 }

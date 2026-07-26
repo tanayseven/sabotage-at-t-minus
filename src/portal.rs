@@ -49,7 +49,7 @@ pub struct PortalSpark {
 pub fn spawn_portals(
     commands: &mut Commands,
     assets: &AssetServer,
-    puzzles: RocketPuzzles,
+    puzzles: &RocketPuzzles,
     marker: impl Bundle + Clone,
 ) {
     let texture = load_pixel_art(assets, PORTAL_SPRITE);

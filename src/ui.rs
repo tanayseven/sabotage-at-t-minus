@@ -130,11 +130,13 @@ pub fn button_visuals(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_hud(
     commands: &mut Commands,
     font: &GameFont,
     codes: &RoomCodes,
     level: Level,
+    deck_count: usize,
     panel: &Panel,
     progress: &LevelProgress,
 ) {
@@ -196,7 +198,15 @@ pub fn spawn_hud(
             // Under the clock, because it is read the same way: a glance, not a
             // look. It names the room the panel is in — finding it is not the
             // puzzle, and the clock is short.
-            spawn_panel_status(parent, codes, level, panel, progress, HUD_STATUS_FONT);
+            spawn_panel_status(
+                parent,
+                codes,
+                level,
+                deck_count,
+                panel,
+                progress,
+                HUD_STATUS_FONT,
+            );
         });
 
     commands

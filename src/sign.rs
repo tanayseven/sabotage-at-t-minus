@@ -36,9 +36,10 @@ pub fn spawn_room_signs(
     commands: &mut Commands,
     codes: &RoomCodes,
     level: Level,
+    deck_count: usize,
     marker: impl Bundle + Clone,
 ) {
-    for room in level.rooms() {
+    for room in level.rooms(deck_count) {
         let at = room.sign();
 
         commands.spawn((
@@ -61,7 +62,7 @@ pub fn spawn_room_signs(
         ));
         commands.spawn((
             marker.clone(),
-            Text2d::new(format!("#{}", codes.of(*room))),
+            Text2d::new(format!("#{}", codes.of(room))),
             TextFont {
                 font_size: FontSize::Px(CODE_FONT),
                 ..default()

@@ -8,7 +8,7 @@ const PLATFORM_Z: f32 = -1.0;
 
 /// A solid ledge you can stand on. The launch pad's stairway and gantry bridge
 /// are made of these too, which is why it is public.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Platform {
     pub centre: Vec2,
     pub width: f32,

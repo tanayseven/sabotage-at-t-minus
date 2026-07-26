@@ -1,12 +1,19 @@
 use bevy::prelude::*;
 
+use crate::difficulty::Difficulty;
+
 /// Player-facing audio levels, edited on the options screen. Kept as a resource
 /// rather than baked into the audio components so a change can be applied to a
 /// track that is already playing.
+///
+/// The chosen [`Difficulty`] lives here too — it is set on its own screen
+/// rather than on the options screen, but it is just as much a standing
+/// preference: it carries over from one run to the next until changed again.
 #[derive(Resource)]
 pub struct Settings {
     pub music_volume: f32,
     pub sfx_volume: f32,
+    pub difficulty: Difficulty,
 }
 
 impl Default for Settings {
@@ -14,6 +21,7 @@ impl Default for Settings {
         Self {
             music_volume: 0.5,
             sfx_volume: 0.5,
+            difficulty: Difficulty::default(),
         }
     }
 }

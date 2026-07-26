@@ -12,11 +12,14 @@
 
 use bevy::prelude::*;
 
-use crate::level::{ROOM_COUNT, Room};
+use crate::difficulty::MIN_DECK_COUNT;
+use crate::level::{ROOMS_PER_DECK, Room};
 use crate::minigames::{MINIGAME_COUNT, MinigameId};
 
-/// Fewer rooms than kinds would leave a challenge with nowhere to be installed.
-const _: () = assert!(MINIGAME_COUNT <= ROOM_COUNT);
+/// Fewer rooms than kinds would leave a challenge with nowhere to be
+/// installed — checked against the smallest difficulty deals, since that is
+/// the tightest a run ever gets.
+const _: () = assert!(MINIGAME_COUNT <= MIN_DECK_COUNT * ROOMS_PER_DECK);
 
 /// The rooms this run's puzzles are in: the panel's room, and which challenge
 /// each room's breach opens. A resource rather than a component because the
@@ -28,16 +31,22 @@ const _: () = assert!(MINIGAME_COUNT <= ROOM_COUNT);
 /// which room the panel is bolted in. The breach and the panel are mounted on
 /// different stretches of a room's wall, so the room that draws both is worked
 /// rather than blocked.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Sized to the run's room count rather than a fixed one, since how many decks
+/// the rocket has is picked per run.
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
 pub struct RocketPuzzles {
     pub panel_room: Room,
     /// The challenge behind each room's breach, by room index.
-    pub room_minigames: [MinigameId; ROOM_COUNT],
+    pub room_minigames: Vec<MinigameId>,
 }
 
 impl Default for RocketPuzzles {
+    /// A placeholder dealt over Medium's room count — every run overwrites
+    /// this before the level it names is ever built, so what it is dealt off
+    /// only matters for satisfying the resource's existence at startup.
     fn default() -> Self {
-        Self::from_seed(0)
+        Self::from_seed(0, 4 * ROOMS_PER_DECK)
     }
 }
 
@@ -58,13 +67,14 @@ impl RocketPuzzles {
     /// challenge, so something has to repeat; going round in order is what
     /// stops a run from stacking every breach of one kind at one end of the
     /// rocket, and the rolling start is what stops two runs being the same.
-    pub fn from_seed(seed: u64) -> Self {
+    pub fn from_seed(seed: u64, room_count: usize) -> Self {
         let bits = scramble(seed);
-        let panel_room = Room::from_index((bits % ROOM_COUNT as u64) as usize);
+        let panel_room = Room::from_index((bits % room_count as u64) as usize);
 
         let first = (scramble(bits) % MINIGAME_COUNT as u64) as usize;
-        let room_minigames =
-            std::array::from_fn(|room| MinigameId::ALL[(first + room) % MINIGAME_COUNT]);
+        let room_minigames: Vec<MinigameId> = (0..room_count)
+            .map(|room| MinigameId::ALL[(first + room) % MINIGAME_COUNT])
+            .collect();
 
         Self {
             panel_room,
@@ -74,13 +84,12 @@ impl RocketPuzzles {
 
     /// Where the run's breaches stand and which challenge each one opens: one
     /// per room of the rocket.
-    pub fn portal_placements(&self) -> [(Vec2, MinigameId); ROOM_COUNT] {
-        std::array::from_fn(|room| {
-            (
-                Room::from_index(room).portal_mount(),
-                self.room_minigames[room],
-            )
-        })
+    pub fn portal_placements(&self) -> Vec<(Vec2, MinigameId)> {
+        self.room_minigames
+            .iter()
+            .enumerate()
+            .map(|(room, minigame)| (Room::from_index(room).portal_mount(), *minigame))
+            .collect()
     }
 }
 
@@ -88,16 +97,18 @@ impl RocketPuzzles {
 mod tests {
     use super::*;
 
+    const TEST_ROOM_COUNT: usize = 4 * ROOMS_PER_DECK;
+
     /// The point of the change: there is a job in every room, so a player who
     /// walks into any room of the rocket has something to work there.
     #[test]
     fn every_room_has_a_breach() {
-        let puzzles = RocketPuzzles::from_seed(7);
+        let puzzles = RocketPuzzles::from_seed(7, TEST_ROOM_COUNT);
         let placements = puzzles.portal_placements();
 
-        assert_eq!(placements.len(), ROOM_COUNT);
+        assert_eq!(placements.len(), TEST_ROOM_COUNT);
 
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
 
             assert!(
@@ -113,7 +124,7 @@ mod tests {
     #[test]
     fn every_challenge_is_installed_somewhere() {
         for seed in 0..500u64 {
-            let puzzles = RocketPuzzles::from_seed(seed);
+            let puzzles = RocketPuzzles::from_seed(seed, TEST_ROOM_COUNT);
 
             for minigame in MinigameId::ALL {
                 assert!(
@@ -130,7 +141,7 @@ mod tests {
     #[test]
     fn neighbouring_rooms_open_different_challenges() {
         for seed in 0..500u64 {
-            let puzzles = RocketPuzzles::from_seed(seed);
+            let puzzles = RocketPuzzles::from_seed(seed, TEST_ROOM_COUNT);
 
             for pair in puzzles.room_minigames.windows(2) {
                 assert_ne!(
@@ -151,7 +162,7 @@ mod tests {
         use crate::config::PLAYER_HEIGHT;
         use crate::portal::PORTAL_RADIUS;
 
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
             let breach = room.portal_mount();
             // Where a player stood at the panel, ready to throw a switch, has
@@ -171,8 +182,10 @@ mod tests {
     #[test]
     fn seeds_a_moment_apart_deal_different_runs() {
         let seed = 1_234_567_890_u64;
-        let differ = (1..=8)
-            .filter(|step| RocketPuzzles::from_seed(seed + step) != RocketPuzzles::from_seed(seed));
+        let differ = (1..=8).filter(|step| {
+            RocketPuzzles::from_seed(seed + step, TEST_ROOM_COUNT)
+                != RocketPuzzles::from_seed(seed, TEST_ROOM_COUNT)
+        });
 
         assert!(differ.count() >= 6, "the deal barely moves between seeds");
     }

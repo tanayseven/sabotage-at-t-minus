@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use crate::config::{CAMERA_DECAY, DESIGN_HEIGHT, DESIGN_WIDTH, VIEW_HEIGHT, VIEW_WIDTH};
 use crate::level::{CameraMode, Level};
 use crate::player::Player;
+use crate::settings::Settings;
 
 const BACKDROP_COLOR: Color = Color::srgb(0.10, 0.11, 0.14);
 const BACKDROP_Z: f32 = -10.0;
@@ -51,10 +52,20 @@ fn projection(mode: CameraMode) -> Projection {
 
 /// Frames the level that was just built. Runs on any change to [`Level`], which
 /// is what starting a run is.
-pub fn apply_level_camera(level: Res<Level>, cameras: Cameras, backdrops: Backdrops) {
+pub fn apply_level_camera(
+    level: Res<Level>,
+    settings: Res<Settings>,
+    cameras: Cameras,
+    backdrops: Backdrops,
+) {
     // Opens on the player's drop point rather than sliding over from wherever
     // the launch pad left the camera.
-    frame(level.camera(), level.player_spawn(), cameras, backdrops);
+    frame(
+        level.camera(settings.difficulty.deck_count()),
+        level.player_spawn(),
+        cameras,
+        backdrops,
+    );
 }
 
 /// Puts the fixed, whole-screen framing back for the menu and the launch pad,
@@ -96,10 +107,11 @@ fn frame(mode: CameraMode, focus: Vec2, mut cameras: Cameras, mut backdrops: Bac
 pub fn follow_player(
     time: Res<Time>,
     level: Res<Level>,
+    settings: Res<Settings>,
     players: Query<&Transform, (With<Player>, Without<Camera2d>)>,
     mut cameras: Query<(&mut Transform, &Projection), With<Camera2d>>,
 ) {
-    let CameraMode::Follow { bounds, .. } = level.camera() else {
+    let CameraMode::Follow { bounds, .. } = level.camera(settings.difficulty.deck_count()) else {
         return;
     };
 
