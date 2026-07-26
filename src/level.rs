@@ -1,6 +1,6 @@
 //! The level a run is made of.
 //!
-//! A run is the rocket: six rooms with a job in three of them, and the airlock
+//! A run is the rocket: eight rooms with a job in three of them, and the airlock
 //! back at the drop point. The airlock is the way the player came in and the way
 //! back out, and working it is what finishes the run — there is nothing after the
 //! rocket, so what was once a doorway onto the next level is now the end of the
@@ -125,7 +125,8 @@ const DECK_HEIGHT: f32 = 260.0;
 const DECK_0: f32 = GROUND_TOP;
 const DECK_1: f32 = DECK_0 + DECK_HEIGHT;
 const DECK_2: f32 = DECK_1 + DECK_HEIGHT;
-const ROCKET_CEILING: f32 = DECK_2 + DECK_HEIGHT;
+const DECK_3: f32 = DECK_2 + DECK_HEIGHT;
+const ROCKET_CEILING: f32 = DECK_3 + DECK_HEIGHT;
 
 const LOWER_LADDER_X: f32 = 400.0;
 const UPPER_LADDER_X: f32 = -400.0;
@@ -140,44 +141,50 @@ const fn plate(from: f32, to: f32, top: f32) -> Platform {
     Platform::with_top((from + to) / 2.0, top, to - from)
 }
 
-const ROCKET_PLATFORMS: [Platform; 6] = [
+const ROCKET_PLATFORMS: [Platform; 8] = [
     plate(HULL_LEFT, HULL_RIGHT, DECK_0),
     plate(HULL_LEFT, LOWER_LADDER_X - LADDER_GAP / 2.0, DECK_1),
     plate(LOWER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_1),
     plate(HULL_LEFT, UPPER_LADDER_X - LADDER_GAP / 2.0, DECK_2),
     plate(UPPER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_2),
+    plate(HULL_LEFT, LOWER_LADDER_X - LADDER_GAP / 2.0, DECK_3),
+    plate(LOWER_LADDER_X + LADDER_GAP / 2.0, HULL_RIGHT, DECK_3),
     plate(HULL_LEFT, HULL_RIGHT, ROCKET_CEILING),
 ];
 
 const DECK_0_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_0);
 const DECK_1_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_1);
 const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
+const DECK_3_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_3);
 const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_0);
 
-const ROCKET_DOORS: [Door; 4] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, AIRLOCK];
+const ROCKET_DOORS: [Door; 5] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, DECK_3_DOOR, AIRLOCK];
 
-const ROCKET_WALLS: [Wall; 5] = [
+const ROCKET_WALLS: [Wall; 6] = [
     Wall::between(HULL_LEFT, DECK_0, ROCKET_CEILING),
     Wall::between(HULL_RIGHT, DECK_0, ROCKET_CEILING),
     Wall::between(BULKHEAD_X, DECK_0_DOOR.lintel(), DECK_1 - PLATFORM_HEIGHT),
     Wall::between(BULKHEAD_X, DECK_1_DOOR.lintel(), DECK_2 - PLATFORM_HEIGHT),
+    Wall::between(BULKHEAD_X, DECK_2_DOOR.lintel(), DECK_3 - PLATFORM_HEIGHT),
     Wall::between(
         BULKHEAD_X,
-        DECK_2_DOOR.lintel(),
+        DECK_3_DOOR.lintel(),
         ROCKET_CEILING - PLATFORM_HEIGHT,
     ),
 ];
 
-const ROCKET_LADDERS: [Ladder; 2] = [
+const ROCKET_LADDERS: [Ladder; 3] = [
     Ladder::new(LOWER_LADDER_X, DECK_0, DECK_1),
     Ladder::new(UPPER_LADDER_X, DECK_1, DECK_2),
+    Ladder::new(LOWER_LADDER_X, DECK_2, DECK_3),
 ];
 
-const ROCKET_CRATES: [Vec2; 4] = [
+const ROCKET_CRATES: [Vec2; 5] = [
     Vec2::new(-300.0, DECK_0 + 140.0),
     Vec2::new(200.0, DECK_1 + 140.0),
     Vec2::new(-180.0, DECK_2 + 140.0),
     Vec2::new(-520.0, DECK_2 + 140.0),
+    Vec2::new(200.0, DECK_3 + 140.0),
 ];
 
 const ROCKET_SPAWN: Vec2 = Vec2::new(HULL_LEFT + 120.0, DECK_0 + 60.0);
@@ -229,20 +236,21 @@ impl Side {
 
 /// How many decks the rocket has, and how many rooms the bulkhead cuts each of
 /// them into.
-pub const DECK_COUNT: usize = 3;
+pub const DECK_COUNT: usize = 4;
 const ROOMS_PER_DECK: usize = 2;
 /// Every room in the rocket, which is what anything picking one at random works
 /// against.
 pub const ROOM_COUNT: usize = DECK_COUNT * ROOMS_PER_DECK;
 
-/// One of the rocket's six rooms: the stretch of a deck on one side of the
+/// One of the rocket's eight rooms: the stretch of a deck on one side of the
 /// bulkhead. Described by which deck and which side rather than by its corners,
 /// because that is what a room *is* here — the plates, the hull and the
 /// bulkhead already say where the walls are, and a second copy of those numbers
 /// would only be one to keep in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Room {
-    /// 0 is the deck the player is dropped onto and leaves by, 2 the top one.
+    /// 0 is the deck the player is dropped onto and leaves by, the top one is
+    /// the last of the rocket's decks.
     pub deck: usize,
     pub side: Side,
 }
@@ -278,7 +286,7 @@ pub struct RoomCodes([String; ROOM_COUNT]);
 
 impl RoomCodes {
     /// Distinct codes, because the whole use of a code is telling one room from
-    /// the other five.
+    /// the other seven.
     pub fn random() -> Self {
         let mut rng = rand::thread_rng();
         let mut codes: Vec<String> = Vec::with_capacity(ROOM_COUNT);
@@ -420,6 +428,8 @@ const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
     Room::from_index(3),
     Room::from_index(4),
     Room::from_index(5),
+    Room::from_index(6),
+    Room::from_index(7),
 ];
 
 impl Level {
@@ -537,9 +547,9 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, DECK_COUNT, DECK_HEIGHT, Door,
-        HULL_RIGHT, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress, ROOM_CODE_LEN, ROOM_COUNT,
-        Room, RoomCodes, UPPER_LADDER_X,
+        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, DECK_3, DECK_COUNT, DECK_HEIGHT,
+        Door, HULL_LEFT, HULL_RIGHT, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress,
+        ROOM_CODE_LEN, ROOM_COUNT, Room, RoomCodes, UPPER_LADDER_X,
     };
     use crate::config::PLAYER_HEIGHT;
 
@@ -980,7 +990,8 @@ mod tests {
                 "the upper ladder never reached deck 2"
             );
 
-            // Off it, across the top deck, and through the last bulkhead.
+            // Off it, across deck 2, and through its bulkhead to the third
+            // ladder.
             assert!(
                 run.hold_until(&[D], 300, |at| at.x >= UPPER_LADDER_X + LADDER_GAP),
                 "never stepped off the upper ladder onto deck 2"
@@ -990,14 +1001,41 @@ mod tests {
 
             run.hold(&[E], 2);
             assert!(
-                run.hold_until(&[D], 600, |at| at.x >= HULL_RIGHT - 200.0),
-                "deck 2's door never let the player through to the starboard end (stuck at {:?})",
+                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                "deck 2's door never let the player through to the third ladder (stuck at {:?})",
+                run.at()
+            );
+            assert!(
+                run.hold_until(&[W], 400, |at| at.y >= standing_on(DECK_3) - 1.0),
+                "the third ladder never reached deck 3"
+            );
+
+            // Off it, across the top deck, and through the last bulkhead.
+            assert!(
+                run.hold_until(&[A], 300, |at| at.x <= LOWER_LADDER_X - LADDER_GAP),
+                "never stepped off the third ladder onto deck 3"
+            );
+            let at = run.shut_out_by_the_door(A);
+            assert_shut_out(at, A, DECK_3, "deck 3");
+
+            run.hold(&[E], 2);
+            assert!(
+                run.hold_until(&[A], 600, |at| at.x <= HULL_LEFT + 200.0),
+                "deck 3's door never let the player through to the port end (stuck at {:?})",
                 run.at()
             );
 
             // The way out is back where the run started, so the top deck is not
-            // the end of it: back down both ladders and along deck 0 to the
-            // airlock the player was dropped in beside.
+            // the end of it: back down all three ladders and along deck 0 to
+            // the airlock the player was dropped in beside.
+            assert!(
+                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                "never got back across deck 3 to the third ladder"
+            );
+            assert!(
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_2) + 1.0),
+                "the third ladder never brought the player back down to deck 2"
+            );
             assert!(
                 run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
                 "never got back across deck 2 to the upper ladder"
