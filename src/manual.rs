@@ -80,12 +80,12 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 5] = [
+const PAGES: [Page; 6] = [
     Page {
         heading: "Read This First",
         lines: &[
             "The rocket leaves at T-00:00 whether or not it is airworthy.",
-            "Three systems were tampered with while the pad was clear.",
+            "Four systems were tampered with while the pad was clear.",
             "Each has a page, and each is in a room of its own — the crew",
             "route to the airlock walks every room, so none can be missed.",
             "",
@@ -132,21 +132,21 @@ const PAGES: [Page; 5] = [
             "Stopping short lets the charge bleed back out of it.",
         ],
     },
-    // TODO: Document as more minigames are added.
-    /* Page {
-        heading: "2. Coolant Line, Bay 2",
+    Page {
+        heading: "3. Coolant Regulator Notes",
         lines: &[
-            "Symptom: frost on the outer skin, pressure reading flat.",
+            "Fault: the regulator was backed off and the line runs flat.",
+            "Its gauge stands in a room of its own, as the relays do.",
             "",
-            "1. Close the bay-2 isolation valve before anything else.",
-            "2. Cut away the collapsed section of hose.",
-            "3. Fit the spare coupling from the crate on the ledge.",
-            "4. Re-open the valve and hold for a two-count.",
+            "Hold SPACE to feed the line. Let go and it bleeds back.",
+            "Settle the needle inside the marked band and keep it there.",
             "",
-            "The line is right when the frost lifts off the skin.",
+            "The feed keeps pushing after you let go, so trim early.",
+            "Past the red it ruptures — it vents, and you start again.",
         ],
     },
-    Page {
+    // TODO: Document as more minigames are added.
+    /* Page {
         heading: "3. Gimbal Lock, Engine Mount",
         lines: &[
             "Symptom: the nozzle will not swing; steering is dead.",
@@ -175,11 +175,12 @@ const PAGES: [Page; 5] = [
     Page {
         heading: "Sign-Off",
         lines: &[
-            "The airlock stays locked until all three are signed off:",
+            "The airlock stays locked until all four are signed off:",
             "",
             "  Isolation panel set, all three lamps up.",
             "  Signal relay jointed, the crackle steady.",
             "  Core relay bypassed, the charge carrying itself.",
+            "  Coolant regulator sealed, the needle held in band.",
             "",
             "Then get clear. The clock does not wait for the paperwork.",
         ],
