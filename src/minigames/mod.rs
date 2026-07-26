@@ -6,6 +6,7 @@ use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
 
 mod broken_wire;
+mod clean_engine;
 mod tap_challenge;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -28,6 +29,10 @@ const WIRES_CANVAS_HEIGHT: f32 = 170.0;
 pub enum MinigameId {
     TapChallenge,
     BrokenWire,
+    // Built and constructible, but not yet placed in any level, so nothing
+    // constructs this variant. Remove the allow once a portal points at it.
+    #[allow(dead_code)]
+    CleanEngine,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -425,5 +430,6 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
         MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
+        MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new()),
     }
 }
