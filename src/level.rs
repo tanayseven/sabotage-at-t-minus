@@ -1,9 +1,10 @@
 //! The level a run is made of.
 //!
 //! A run is the rocket: six rooms with a job in three of them, and the airlock
-//! at the far end of the top deck. The airlock is the way back out, and working
-//! it is what finishes the run — there is nothing after the rocket, so what was
-//! once a doorway onto the next level is now the end of the mission.
+//! back at the drop point. The airlock is the way the player came in and the way
+//! back out, and working it is what finishes the run — there is nothing after the
+//! rocket, so what was once a doorway onto the next level is now the end of the
+//! mission.
 
 use bevy::prelude::*;
 
@@ -128,8 +129,11 @@ const ROCKET_CEILING: f32 = DECK_2 + DECK_HEIGHT;
 const LOWER_LADDER_X: f32 = 400.0;
 const UPPER_LADDER_X: f32 = -400.0;
 const LADDER_GAP: f32 = LADDER_CLEARANCE;
-/// The way back out, at the far end of the top deck. Working it ends the run.
-const AIRLOCK_X: f32 = HULL_RIGHT - WALL_THICKNESS / 2.0;
+/// The way back out, and working it ends the run. Set into the hull the player
+/// is dropped in beside, on the deck they are dropped onto: the run leaves the
+/// rocket by the point it came in at, so clearing it is a there-and-back through
+/// the rooms rather than a one-way climb.
+const AIRLOCK_X: f32 = HULL_LEFT + WALL_THICKNESS / 2.0;
 
 const fn plate(from: f32, to: f32, top: f32) -> Platform {
     Platform::with_top((from + to) / 2.0, top, to - from)
@@ -147,7 +151,7 @@ const ROCKET_PLATFORMS: [Platform; 6] = [
 const DECK_0_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_0);
 const DECK_1_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_1);
 const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
-const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_2);
+const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_0);
 
 const ROCKET_DOORS: [Door; 4] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, AIRLOCK];
 
@@ -237,7 +241,7 @@ pub const ROOM_COUNT: usize = DECK_COUNT * ROOMS_PER_DECK;
 /// would only be one to keep in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Room {
-    /// 0 is the deck the player is dropped onto, 2 the one the airlock is on.
+    /// 0 is the deck the player is dropped onto and leaves by, 2 the top one.
     pub deck: usize,
     pub side: Side,
 }
@@ -402,8 +406,8 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door, LADDER_GAP, LOWER_LADDER_X,
-        Level, LevelProgress, ROOM_COUNT, Room, UPPER_LADDER_X,
+        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door, HULL_RIGHT, LADDER_GAP,
+        LOWER_LADDER_X, Level, LevelProgress, ROOM_COUNT, Room, UPPER_LADDER_X,
     };
     use crate::config::PLAYER_HEIGHT;
 
@@ -412,9 +416,8 @@ mod tests {
         assert_eq!(Level::default(), Level::Rocket);
     }
 
-    /// The rocket is the run: there is nothing after it, and the airlock at
-    /// the end of the top deck is the way back out rather than a doorway onto
-    /// somewhere else.
+    /// The rocket is the run: there is nothing after it, and the airlock is the
+    /// way back out rather than a doorway onto somewhere else.
     #[test]
     fn the_rocket_is_the_whole_run() {
         assert!(!Level::Rocket.walls().is_empty());
@@ -423,12 +426,12 @@ mod tests {
         assert_eq!(AIRLOCK.kind, crate::door::DoorKind::Airlock);
     }
 
-    /// The exit is on the far side of the top deck, past the last bulkhead —
-    /// the end of the crossing, not somewhere the player starts next to. Read
-    /// off the level's own doors, so a layout that stopped shipping the airlock
-    /// fails here rather than passing against the constant.
+    /// The exit is the entrance: the hatch the player is dropped in beside is
+    /// the one they leave by, so the run ends where it began and the crossing is
+    /// a round trip. Read off the level's own doors, so a layout that stopped
+    /// shipping the airlock fails here rather than passing against the constant.
     #[test]
-    fn the_exit_is_at_the_far_end_of_the_rocket() {
+    fn the_exit_is_where_the_run_starts() {
         let spawn = Level::Rocket.player_spawn();
         let exit = Level::Rocket
             .doors()
@@ -436,10 +439,18 @@ mod tests {
             .find(|door| door.kind == crate::door::DoorKind::Airlock)
             .expect("the rocket has no way back out");
 
-        assert!(exit.at.x > BULKHEAD_X, "the exit is not past the bulkhead");
         assert!(
-            exit.sill() > spawn.y,
-            "the exit is on the deck the run starts on"
+            exit.at.x < BULKHEAD_X && spawn.x < BULKHEAD_X,
+            "the exit is not on the side of the bulkhead the run starts on"
+        );
+        assert_eq!(
+            exit.sill(),
+            DECK_0,
+            "the exit is not on the deck the run starts on"
+        );
+        assert!(
+            exit.in_reach(spawn),
+            "the run does not start within reach of the way out"
         );
     }
 
@@ -543,6 +554,7 @@ mod tests {
         const A: KeyCode = KeyCode::KeyA;
         const D: KeyCode = KeyCode::KeyD;
         const E: KeyCode = KeyCode::KeyE;
+        const S: KeyCode = KeyCode::KeyS;
         const W: KeyCode = KeyCode::KeyW;
 
         /// Where a player standing on a deck has their centre.
@@ -784,8 +796,33 @@ mod tests {
 
             run.hold(&[E], 2);
             assert!(
-                run.hold_until(&[D], 600, |at| AIRLOCK.in_reach(at)),
-                "deck 2's door never let the player within reach of the airlock (stuck at {:?})",
+                run.hold_until(&[D], 600, |at| at.x >= HULL_RIGHT - 200.0),
+                "deck 2's door never let the player through to the starboard end (stuck at {:?})",
+                run.at()
+            );
+
+            // The way out is back where the run started, so the top deck is not
+            // the end of it: back down both ladders and along deck 0 to the
+            // airlock the player was dropped in beside.
+            assert!(
+                run.hold_until(&[A], 600, |at| at.x <= UPPER_LADDER_X),
+                "never got back across deck 2 to the upper ladder"
+            );
+            assert!(
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_1) + 1.0),
+                "the upper ladder never brought the player back down to deck 1"
+            );
+            assert!(
+                run.hold_until(&[D], 600, |at| at.x >= LOWER_LADDER_X),
+                "never crossed deck 1 back to the lower ladder"
+            );
+            assert!(
+                run.hold_until(&[S], 400, |at| at.y <= standing_on(DECK_0) + 1.0),
+                "the lower ladder never brought the player back down to deck 0"
+            );
+            assert!(
+                run.hold_until(&[A], 800, |at| AIRLOCK.in_reach(at)),
+                "deck 0 never led back to the airlock (stuck at {:?})",
                 run.at()
             );
 
@@ -810,7 +847,7 @@ mod tests {
 
             // And out. Working the airlock while standing in it is what ends the
             // level, so the walk and the press go in together.
-            run.hold(&[E, D], 6);
+            run.hold(&[E, A], 6);
 
             assert_eq!(
                 run.playing_state(),
