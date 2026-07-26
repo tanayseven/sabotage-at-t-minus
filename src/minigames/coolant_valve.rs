@@ -4,6 +4,7 @@ use super::{
     CoolantGaugeVisualState, MinigameAudioCue, MinigameInstance, MinigameOutcome,
     MinigameVisualState,
 };
+use crate::minigame_keys::MinigameKeys;
 
 const PRESSURE_MAX: f32 = 100.0;
 
@@ -41,15 +42,17 @@ pub struct CoolantValve {
     rate: f32,
     phase: ValvePhase,
     pending_cue: Option<MinigameAudioCue>,
+    feed_key: KeyCode,
 }
 
 impl CoolantValve {
-    pub fn new() -> Self {
+    pub fn new(keys: MinigameKeys) -> Self {
         Self {
             pressure: 0.0,
             rate: 0.0,
             phase: ValvePhase::Regulating,
             pending_cue: None,
+            feed_key: keys.action,
         }
     }
 
@@ -116,7 +119,7 @@ impl MinigameInstance for CoolantValve {
     }
 
     fn tick(&mut self, keys: &ButtonInput<KeyCode>, delta_seconds: f32) -> Option<MinigameOutcome> {
-        let feeding = keys.pressed(KeyCode::Space);
+        let feeding = keys.pressed(self.feed_key);
 
         match self.phase {
             ValvePhase::Regulating => {

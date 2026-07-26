@@ -4,6 +4,7 @@ use super::{
     MinigameAudioCue, MinigameInstance, MinigameOutcome, MinigameVisualState, PipeRunVisualState,
     PipeTileVisual,
 };
+use crate::minigame_keys::MinigameKeys;
 use crate::puzzles::scramble;
 
 pub const PIPE_COLS: usize = 4;
@@ -112,25 +113,34 @@ pub struct PipeFlow {
     cursor: usize,
     phase: RunPhase,
     pending_cue: Option<MinigameAudioCue>,
+    /// Walks the wrench back a coupling.
+    prev_key: KeyCode,
+    /// Walks the wrench on a coupling.
+    next_key: KeyCode,
+    /// Turns the coupling under the wrench a quarter turn.
+    turn_key: KeyCode,
 }
 
 impl PipeFlow {
-    pub fn new() -> Self {
-        Self::from_seed(rand::random())
+    pub fn new(keys: MinigameKeys) -> Self {
+        Self::from_seed(rand::random(), keys)
     }
 
-    pub fn from_seed(seed: u64) -> Self {
-        Self::over(deal(seed).board)
+    pub fn from_seed(seed: u64, keys: MinigameKeys) -> Self {
+        Self::over(deal(seed).board, keys)
     }
 
     /// A run sitting over an already-dealt board, with the wrench back at the
     /// inlet end. What both the deal and its tests build through.
-    fn over(couplings: [Coupling; PIPE_TILES]) -> Self {
+    fn over(couplings: [Coupling; PIPE_TILES], keys: MinigameKeys) -> Self {
         Self {
             couplings,
             cursor: 0,
             phase: RunPhase::Turning,
             pending_cue: None,
+            prev_key: keys.primary,
+            next_key: keys.secondary,
+            turn_key: keys.action,
         }
     }
 
@@ -171,6 +181,16 @@ impl PipeFlow {
         self.trace().1
     }
 }
+
+/// Stands in for a room's dealt keys wherever a `PipeFlow` is built only to
+/// read its board back, not to be played — the keys never come into it.
+const DUMMY_KEYS: MinigameKeys = MinigameKeys {
+    primary: KeyCode::KeyA,
+    secondary: KeyCode::KeyD,
+    up: KeyCode::KeyW,
+    down: KeyCode::KeyS,
+    action: KeyCode::Space,
+};
 
 struct Deal {
     /// The couplings as the player meets them.
@@ -240,7 +260,7 @@ fn deal(seed: u64) -> Deal {
 
     // A run dealt already made up is not a puzzle. One turn always breaks it:
     // both pieces open onto different faces at every quarter.
-    if PipeFlow::over(board).flowing() {
+    if PipeFlow::over(board, DUMMY_KEYS).flowing() {
         board[path[0]] = board[path[0]].turned();
     }
 
@@ -295,14 +315,14 @@ impl MinigameInstance for PipeFlow {
     fn tick(&mut self, keys: &ButtonInput<KeyCode>, delta_seconds: f32) -> Option<MinigameOutcome> {
         match self.phase {
             RunPhase::Turning => {
-                if keys.just_pressed(KeyCode::KeyA) {
+                if keys.just_pressed(self.prev_key) {
                     self.cursor = (self.cursor + PIPE_TILES - 1) % PIPE_TILES;
                 }
-                if keys.just_pressed(KeyCode::KeyD) {
+                if keys.just_pressed(self.next_key) {
                     self.cursor = (self.cursor + 1) % PIPE_TILES;
                 }
 
-                if keys.just_pressed(KeyCode::Space) {
+                if keys.just_pressed(self.turn_key) {
                     self.couplings[self.cursor] = self.couplings[self.cursor].turned();
 
                     if self.flowing() {
@@ -363,7 +383,7 @@ mod tests {
             let dealt = deal(seed);
 
             assert!(
-                PipeFlow::over(dealt.made_up).flowing(),
+                PipeFlow::over(dealt.made_up, DUMMY_KEYS).flowing(),
                 "seed {seed} dealt a run whose own answer does not carry the feed"
             );
 
@@ -382,7 +402,7 @@ mod tests {
     fn the_answer_can_be_turned_in_with_the_wrench() {
         for seed in 0..64 {
             let dealt = deal(seed);
-            let mut run = PipeFlow::from_seed(seed);
+            let mut run = PipeFlow::from_seed(seed, DUMMY_KEYS);
 
             for index in 0..PIPE_TILES {
                 run.cursor = index;
@@ -411,7 +431,7 @@ mod tests {
     fn no_board_is_dealt_already_made_up() {
         for seed in 0..SEEDS {
             assert!(
-                !PipeFlow::from_seed(seed).flowing(),
+                !PipeFlow::from_seed(seed, DUMMY_KEYS).flowing(),
                 "seed {seed} dealt a run that was already made up"
             );
         }
@@ -420,7 +440,7 @@ mod tests {
     /// A and D reach every coupling, and wrap rather than sticking at the ends.
     #[test]
     fn the_wrench_reaches_every_coupling() {
-        let mut run = PipeFlow::from_seed(7);
+        let mut run = PipeFlow::from_seed(7, DUMMY_KEYS);
         let mut seen = [false; PIPE_TILES];
 
         for _ in 0..PIPE_TILES {
@@ -450,7 +470,7 @@ mod tests {
 
         // Set up one turn short of the answer, so the last press is the one
         // that makes the run up.
-        let mut run = PipeFlow::over(deal(SEED).made_up);
+        let mut run = PipeFlow::over(deal(SEED).made_up, DUMMY_KEYS);
         run.couplings[INLET_TILE] = run.couplings[INLET_TILE].turned();
         run.cursor = INLET_TILE;
         assert!(!run.flowing(), "the board was set up already made up");

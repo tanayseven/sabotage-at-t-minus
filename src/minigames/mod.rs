@@ -1,6 +1,8 @@
 use bevy::audio::Volume;
 use bevy::prelude::*;
 
+use crate::level::Room;
+use crate::minigame_keys::{MinigameKeys, RoomKeys};
 use crate::settings::Settings;
 use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
@@ -181,6 +183,9 @@ pub enum MinigameAudioCue {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MinigameConfig {
     pub id: MinigameId,
+    /// Which room the breach opening this challenge is in — what its keys are
+    /// drawn from. See [`crate::minigame_keys`].
+    pub room: Room,
 }
 
 /// Common contract future minigames can implement.
@@ -302,11 +307,12 @@ pub fn spawn_minigame_window(
     active: Option<Res<ActiveMinigame>>,
     mut next_playing: ResMut<NextState<PlayingState>>,
     font: Res<GameFont>,
+    room_keys: Res<RoomKeys>,
 ) {
     let (id, title, instructions, status) = if let Some(pending) = pending {
         let config = pending.0;
         let id = config.id;
-        let game = new_minigame(id);
+        let game = new_minigame(id, room_keys.of(config.room));
         let title = game.title();
         let instructions = game.instructions();
         let status = game.status();
@@ -946,14 +952,14 @@ pub fn clear_active_minigame(mut commands: Commands) {
     commands.remove_resource::<CompletedMinigame>();
 }
 
-fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
+fn new_minigame(id: MinigameId, keys: MinigameKeys) -> Box<dyn MinigameInstance> {
     match id {
-        MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
-        MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new()),
+        MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new(keys)),
+        MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new(keys)),
         // No art of its own yet: the default `visual_state` prints `status`
         // into the window's text, which is the whole of its display.
-        MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new()),
-        MinigameId::PipeFlow => Box::new(pipe_flow::PipeFlow::new()),
+        MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new(keys)),
+        MinigameId::PipeFlow => Box::new(pipe_flow::PipeFlow::new(keys)),
     }
 }
 
@@ -996,8 +1002,16 @@ mod tests {
 
     #[test]
     fn every_challenge_can_be_opened() {
+        let keys = MinigameKeys {
+            primary: KeyCode::KeyA,
+            secondary: KeyCode::KeyD,
+            up: KeyCode::KeyW,
+            down: KeyCode::KeyS,
+            action: KeyCode::Space,
+        };
+
         for id in MinigameId::ALL {
-            let game = new_minigame(id);
+            let game = new_minigame(id, keys);
 
             assert!(!game.title().is_empty(), "{id:?} has no title");
             assert!(!game.status().is_empty(), "{id:?} has no status");

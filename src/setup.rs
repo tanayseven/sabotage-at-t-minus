@@ -5,6 +5,7 @@ use crate::door::spawn_doors;
 use crate::ladder::spawn_ladders;
 use crate::level::{Level, LevelEntity, LevelProgress, RoomCodes};
 use crate::manual::ManualPage;
+use crate::minigame_keys::RoomKeys;
 use crate::panel::{Panels, spawn_panels};
 use crate::platform::spawn_platforms;
 use crate::player::spawn_player;
@@ -65,10 +66,12 @@ fn reset_run_state(
     let seed = time.elapsed().as_nanos() as u64;
     let puzzles = RocketPuzzles::from_seed(seed, room_count);
     let panels = Panels::from_seed(seed, level, deck_count);
+    let room_keys = RoomKeys::from_seed(seed, room_count);
     let progress = LevelProgress::new(level, deck_count);
 
     commands.insert_resource(puzzles.clone());
     commands.insert_resource(panels.clone());
+    commands.insert_resource(room_keys);
     commands.insert_resource(progress);
 
     RunState {
