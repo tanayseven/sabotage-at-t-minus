@@ -18,8 +18,10 @@
 use bevy::prelude::*;
 use bevy::text::{LineBreak, LineHeight};
 
-use crate::level::{DECK_COUNT, RoomCodes, deck_index_line};
+use crate::difficulty::MAX_DECK_COUNT;
+use crate::level::{RoomCodes, deck_index_line};
 use crate::panel::Panel;
+use crate::settings::Settings;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
 /// Not quite opaque: enough of the level shows through to keep the reader in
@@ -33,7 +35,7 @@ const NAV_BUTTON_FONT: f32 = 18.0;
 /// many lines of so many characters. The box they are set in is derived from
 /// these rather than the other way round, and `every_page_fits_its_box` holds
 /// the pages to them.
-const MAX_PAGE_LINES: usize = 8;
+const MAX_PAGE_LINES: usize = 9;
 const MAX_LINE_CHARS: usize = 62;
 
 /// A generous upper bound on Jersey 10's average advance per character, as a
@@ -79,14 +81,16 @@ struct Page {
 /// cannot push a line of prose out past the width the page is set to.
 const SWITCH_SETTINGS: &str = "\u{0}settings";
 
-/// Stands in for the room index, a line per deck, for the same reason
+/// Stands in for the room index, one line per deck, for the same reason
 /// [`SWITCH_SETTINGS`] does: the codes belong to the rooms, and a second copy
-/// of them written out here would be one to keep in step.
-const ROOM_INDEX: [&str; DECK_COUNT] = ["\u{0}deck0", "\u{0}deck1", "\u{0}deck2", "\u{0}deck3"];
+/// of them written out here would be one to keep in step. Expands to one line
+/// per deck the run turns out to have, so unlike `SWITCH_SETTINGS` it can grow
+/// past the single line it stands in for.
+const ROOM_INDEX: &str = "\u{0}room_index";
 
-/// A slot per deck, and the page below has to have room for all of them.
-const _: () = assert!(ROOM_INDEX.len() == DECK_COUNT);
-const _: () = assert!(DECK_COUNT + 3 <= MAX_PAGE_LINES);
+/// However many decks the widest difficulty deals, the page still has to have
+/// room for the index's three lines of preamble plus one per deck.
+const _: () = assert!(MAX_DECK_COUNT + 3 <= MAX_PAGE_LINES);
 
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
@@ -110,10 +114,7 @@ const PAGES: [Page; 7] = [
             "Every room carries its code on a board inside the doorway. The",
             "readout under the clock gives the code of the room wanted:",
             "",
-            ROOM_INDEX[0],
-            ROOM_INDEX[1],
-            ROOM_INDEX[2],
-            ROOM_INDEX[3],
+            ROOM_INDEX,
         ],
     },
     Page {
@@ -273,6 +274,7 @@ fn spawn_manual(
     codes: &RoomCodes,
     open: ManualPage,
     switch_panel: &Panel,
+    deck_count: usize,
 ) {
     commands
         .spawn((
@@ -338,7 +340,7 @@ fn spawn_manual(
                             ));
                             body.spawn((
                                 ManualBody,
-                                Text::new(body_text(codes, open, switch_panel)),
+                                Text::new(body_text(codes, open, switch_panel, deck_count)),
                                 TextFont {
                                     font_size: FontSize::Px(BODY_FONT),
                                     ..default()
@@ -406,17 +408,20 @@ fn spawn_manual(
         });
 }
 
-/// The open page's body, with the panel's setting printed onto the line the
-/// page leaves for it.
-fn body_text(codes: &RoomCodes, page: ManualPage, panel: &Panel) -> String {
+/// The open page's body, with the panel's setting and the room index printed
+/// onto the lines the page leaves for them.
+fn body_text(codes: &RoomCodes, page: ManualPage, panel: &Panel, deck_count: usize) -> String {
     page.page()
         .lines
         .iter()
         .map(|line| {
             if *line == SWITCH_SETTINGS {
                 panel.printed_settings()
-            } else if let Some(deck) = ROOM_INDEX.iter().position(|slot| slot == line) {
-                deck_index_line(codes, deck)
+            } else if *line == ROOM_INDEX {
+                (0..deck_count)
+                    .map(|deck| deck_index_line(codes, deck))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
                 (*line).to_string()
             }
@@ -441,6 +446,7 @@ pub fn manual_controls(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut page: ResMut<ManualPage>,
     panel: Res<Panel>,
+    settings: Res<Settings>,
     open_buttons: Query<&Interaction, (Changed<Interaction>, With<ManualButton>)>,
     nav_buttons: Query<(&Interaction, &ManualNav), Changed<Interaction>>,
     screen: Query<Entity, With<ManualScreen>>,
@@ -453,7 +459,13 @@ pub fn manual_controls(
 
     let Ok(open) = screen.single() else {
         if toggled {
-            spawn_manual(&mut commands, &codes, *page, &panel);
+            spawn_manual(
+                &mut commands,
+                &codes,
+                *page,
+                &panel,
+                settings.difficulty.deck_count(),
+            );
         }
         return;
     };
@@ -494,6 +506,7 @@ pub fn sync_manual_page(
     codes: Res<RoomCodes>,
     page: Res<ManualPage>,
     panel: Res<Panel>,
+    settings: Res<Settings>,
     mut texts: ParamSet<(
         Query<&mut Text, With<ManualHeading>>,
         Query<&mut Text, With<ManualBody>>,
@@ -506,11 +519,13 @@ pub fn sync_manual_page(
         return;
     }
 
+    let deck_count = settings.difficulty.deck_count();
+
     for mut text in &mut texts.p0() {
         **text = page.page().heading.to_string();
     }
     for mut text in &mut texts.p1() {
-        **text = body_text(&codes, *page, &panel);
+        **text = body_text(&codes, *page, &panel, deck_count);
     }
     for mut text in &mut texts.p2() {
         **text = page.label();
@@ -530,12 +545,20 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES, ROOM_INDEX,
+        MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES,
         SWITCH_SETTINGS, body_text, manual_controls,
     };
     use crate::config::DESIGN_HEIGHT;
-    use crate::level::{RoomCodes, deck_index_line};
+    use crate::difficulty::MAX_DECK_COUNT;
+    use crate::level::{ROOMS_PER_DECK, RoomCodes, deck_index_line};
     use crate::panel::Panel;
+    use crate::settings::Settings;
+
+    /// Stands in for whichever difficulty a real run picks; the widest tier,
+    /// so the tests that read off it are the worst case for width and length
+    /// both.
+    const TEST_DECK_COUNT: usize = MAX_DECK_COUNT;
+    const TEST_ROOM_COUNT: usize = TEST_DECK_COUNT * ROOMS_PER_DECK;
 
     /// The manual's controls, and nothing else — enough to open and close it
     /// with the keyboard and see what that left behind.
@@ -544,9 +567,10 @@ mod tests {
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ManualPage>()
             .init_resource::<Panel>()
+            .init_resource::<Settings>()
             // Nothing renders here; the codes only have to exist for the page
             // to be built.
-            .insert_resource(RoomCodes::random())
+            .insert_resource(RoomCodes::random(TEST_ROOM_COUNT))
             .add_systems(Update, manual_controls);
         app
     }
@@ -706,7 +730,7 @@ mod tests {
     #[test]
     fn the_setting_printed_for_the_run_fits_the_page() {
         for seed in 0..64u64 {
-            let printed = Panel::from_seed(seed).printed_settings();
+            let printed = Panel::from_seed(seed, TEST_ROOM_COUNT).printed_settings();
 
             assert!(
                 printed.chars().count() <= MAX_LINE_CHARS,
@@ -715,13 +739,15 @@ mod tests {
         }
     }
 
-    /// Three lines the page is drawn with but `PAGES` never holds, so
-    /// `every_page_fits_its_box` cannot see them.
+    /// Lines the page is drawn with but `PAGES` never holds — they are built
+    /// at render time, one per deck — so `every_page_fits_its_box` cannot see
+    /// them. Read at the widest difficulty deals, since that is the most
+    /// lines and the room labels grow no shorter with more decks.
     #[test]
     fn the_room_index_fits_the_page() {
-        let codes = RoomCodes::random();
+        let codes = RoomCodes::random(TEST_ROOM_COUNT);
 
-        for deck in 0..ROOM_INDEX.len() {
+        for deck in 0..TEST_DECK_COUNT {
             let line = deck_index_line(&codes, deck);
 
             assert!(
@@ -731,19 +757,50 @@ mod tests {
         }
     }
 
+    /// However many decks the run turns out to have, the index's lines plus
+    /// the rest of the page must not spill past the fixed box it is drawn in.
+    #[test]
+    fn the_room_index_fits_the_page_at_every_difficulty() {
+        use crate::difficulty::Difficulty;
+
+        for difficulty in Difficulty::ALL {
+            let deck_count = difficulty.deck_count();
+            let room_count = deck_count * ROOMS_PER_DECK;
+            let codes = RoomCodes::random(room_count);
+            let panel = Panel::from_seed(0, room_count);
+            let page = (0..PAGES.len())
+                .map(|index| {
+                    let mut page = ManualPage::default();
+                    page.turn(index as isize);
+                    page
+                })
+                .find(|page| page.page().heading == "Room Index")
+                .expect("the manual has no room index page");
+
+            let body = body_text(&codes, page, &panel, deck_count);
+
+            assert!(
+                body.lines().count() <= MAX_PAGE_LINES,
+                "{}'s room index runs to {} lines, past the page's {MAX_PAGE_LINES}",
+                difficulty.label(),
+                body.lines().count()
+            );
+        }
+    }
+
     /// The page is a lookup table, and a lookup table is only worth opening if
     /// the code the HUD gives is on it.
     #[test]
     fn the_room_index_lists_every_room_by_its_code() {
-        use crate::level::{ROOM_COUNT, Room};
+        use crate::level::Room;
 
-        let codes = RoomCodes::random();
-        let printed = (0..ROOM_INDEX.len())
+        let codes = RoomCodes::random(TEST_ROOM_COUNT);
+        let printed = (0..TEST_DECK_COUNT)
             .map(|deck| deck_index_line(&codes, deck))
             .collect::<Vec<_>>()
             .join("\n");
 
-        for index in 0..ROOM_COUNT {
+        for index in 0..TEST_ROOM_COUNT {
             let room = Room::from_index(index);
 
             assert!(
@@ -758,7 +815,7 @@ mod tests {
     /// that still had the slot on it would be one that told them nothing.
     #[test]
     fn the_manual_prints_this_run_s_combination() {
-        let panel = Panel::from_seed(11);
+        let panel = Panel::from_seed(11, TEST_ROOM_COUNT);
         let page = (0..PAGES.len())
             .map(|index| {
                 let mut page = ManualPage::default();
@@ -768,7 +825,12 @@ mod tests {
             .find(|page| page.page().heading == "Isolation Panel")
             .expect("the manual has no isolation panel page");
 
-        let body = body_text(&RoomCodes::random(), page, &panel);
+        let body = body_text(
+            &RoomCodes::random(TEST_ROOM_COUNT),
+            page,
+            &panel,
+            TEST_DECK_COUNT,
+        );
 
         assert!(
             !body.contains(SWITCH_SETTINGS),
@@ -788,17 +850,27 @@ mod tests {
     /// Every other page is printed as written, slot or no slot.
     #[test]
     fn the_pages_without_a_setting_are_printed_as_written() {
-        let panel = Panel::from_seed(11);
+        let panel = Panel::from_seed(11, TEST_ROOM_COUNT);
         let mut page = ManualPage::default();
 
         assert_eq!(
-            body_text(&RoomCodes::random(), page, &panel),
+            body_text(
+                &RoomCodes::random(TEST_ROOM_COUNT),
+                page,
+                &panel,
+                TEST_DECK_COUNT
+            ),
             PAGES[0].lines.join("\n")
         );
 
         page.turn(PAGES.len() as isize);
         assert_eq!(
-            body_text(&RoomCodes::random(), page, &panel),
+            body_text(
+                &RoomCodes::random(TEST_ROOM_COUNT),
+                page,
+                &panel,
+                TEST_DECK_COUNT
+            ),
             PAGES[PAGES.len() - 1].lines.join("\n")
         );
     }

@@ -11,6 +11,7 @@ use crate::player::spawn_player;
 use crate::portal::spawn_portals;
 use crate::props::spawn_props;
 use crate::puzzles::RocketPuzzles;
+use crate::settings::Settings;
 use crate::sign::spawn_room_signs;
 use crate::tiles::load_tiles;
 use crate::ui::{GameFont, spawn_hud};
@@ -26,43 +27,62 @@ pub fn setup(
     mut commands: Commands,
     assets: Res<AssetServer>,
     level: Res<Level>,
+    settings: Res<Settings>,
     time: Res<Time>,
     font: Res<GameFont>,
     codes: Res<RoomCodes>,
 ) {
-    let run = reset_run_state(&mut commands, *level, &time);
-    build_level(&mut commands, &assets, *level, &codes, run);
+    let deck_count = settings.difficulty.deck_count();
+    let run = reset_run_state(&mut commands, *level, deck_count, &time);
+    build_level(
+        &mut commands,
+        &assets,
+        *level,
+        deck_count,
+        &codes,
+        run.clone(),
+    );
     spawn_hud(
         &mut commands,
         &font,
         &codes,
         *level,
+        deck_count,
         &run.panel,
         &run.progress,
     );
 }
 
 /// What one level of a run is built from: where the puzzles are, what the panel
-/// wants, and how much of it is done.
-#[derive(Clone, Copy)]
+/// wants, and how much of it is done. Not `Copy`: the puzzles' room-by-room
+/// deal is sized to the run's room count, so it is a `Vec` rather than a fixed
+/// array.
+#[derive(Clone)]
 pub struct RunState {
     pub puzzles: RocketPuzzles,
     pub panel: Panel,
     pub progress: LevelProgress,
 }
 
-fn reset_run_state(commands: &mut Commands, level: Level, time: &Time) -> RunState {
+fn reset_run_state(
+    commands: &mut Commands,
+    level: Level,
+    deck_count: usize,
+    time: &Time,
+) -> RunState {
     commands.insert_resource(MissionTimer::default());
     commands.insert_resource(ManualPage::default());
+
+    let room_count = deck_count * crate::level::ROOMS_PER_DECK;
 
     // One seed for the whole deal, so the panel's room is drawn from the same
     // hand as the breaches' and no two of them land in one room.
     let seed = time.elapsed().as_nanos() as u64;
-    let puzzles = RocketPuzzles::from_seed(seed);
-    let panel = Panel::from_seed(seed);
-    let progress = LevelProgress::new(level);
+    let puzzles = RocketPuzzles::from_seed(seed, room_count);
+    let panel = Panel::from_seed(seed, room_count);
+    let progress = LevelProgress::new(level, deck_count);
 
-    commands.insert_resource(puzzles);
+    commands.insert_resource(puzzles.clone());
     commands.insert_resource(panel);
     commands.insert_resource(progress);
 
@@ -78,27 +98,35 @@ pub fn build_level(
     commands: &mut Commands,
     assets: &AssetServer,
     level: Level,
+    deck_count: usize,
     codes: &RoomCodes,
     run: RunState,
 ) {
     let tiles = load_tiles(assets);
 
-    spawn_hull_lining(commands, assets, level.interior(), LevelEntity);
-    spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
-    spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
-    spawn_ladders(commands, assets, level.ladders(), LevelEntity);
+    let walls = level.walls(deck_count);
+    let platforms = level.platforms(deck_count);
+    let ladders = level.ladders(deck_count);
+    let doors = level.doors(deck_count);
+    let crates = level.crates(deck_count);
+
+    spawn_hull_lining(commands, assets, level.interior(deck_count), LevelEntity);
+    spawn_wall_run(commands, &tiles, &walls, LevelEntity);
+    spawn_platforms(commands, &tiles, &platforms, LevelEntity);
+    spawn_ladders(commands, assets, &ladders, LevelEntity);
     spawn_doors(
         commands,
-        level.doors(),
+        &doors,
         LevelEntity,
         level,
+        deck_count,
         run.panel,
         run.progress,
     );
-    spawn_panel(commands, &run.panel, level, LevelEntity);
-    spawn_props(commands, level.crates(), LevelEntity);
-    spawn_portals(commands, assets, run.puzzles, LevelEntity);
-    spawn_room_signs(commands, codes, level, LevelEntity);
+    spawn_panel(commands, &run.panel, level, deck_count, LevelEntity);
+    spawn_props(commands, &crates, LevelEntity);
+    spawn_portals(commands, assets, &run.puzzles, LevelEntity);
+    spawn_room_signs(commands, codes, level, deck_count, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
 }
 

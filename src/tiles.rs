@@ -6,7 +6,7 @@ use bevy::prelude::*;
 const CENTRE_TILE: &str = "walls/vertical-center.png";
 const CAP_TILE: &str = "walls/vertical-wall-bottom.png";
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Axis {
     Vertical,
     Horizontal,

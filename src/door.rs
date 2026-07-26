@@ -21,6 +21,7 @@ use crate::level::{Level, LevelProgress};
 use crate::panel::Panel;
 use crate::player::Player;
 use crate::props::LARGEST_CRATE_SIZE;
+use crate::settings::Settings;
 use crate::state::PlayingState;
 
 /// As thick as the bulkhead it is set into, so the panel fills the wall rather
@@ -145,6 +146,7 @@ pub fn spawn_doors(
     doors: &[Door],
     marker: impl Bundle + Clone,
     level: Level,
+    deck_count: usize,
     panel: Panel,
     progress: crate::level::LevelProgress,
 ) {
@@ -152,7 +154,8 @@ pub fn spawn_doors(
         let mut door = *door;
 
         if door.kind == DoorKind::Airlock {
-            door.locked = !progress.all_obstacles_completed(level, panel.room, panel.solved);
+            door.locked =
+                !progress.all_obstacles_completed(level, deck_count, panel.room, panel.solved);
         }
 
         commands.spawn((
@@ -175,6 +178,7 @@ pub fn spawn_doors(
 /// signed off.
 pub fn sync_airlock_lock_state(
     level: Res<Level>,
+    settings: Res<Settings>,
     panel: Res<Panel>,
     progress: Res<LevelProgress>,
     mut doors: Query<(&mut Door, &mut Sprite)>,
@@ -183,7 +187,8 @@ pub fn sync_airlock_lock_state(
         return;
     }
 
-    let locked = !progress.all_obstacles_completed(*level, panel.room, panel.solved);
+    let deck_count = settings.difficulty.deck_count();
+    let locked = !progress.all_obstacles_completed(*level, deck_count, panel.room, panel.solved);
 
     for (mut door, mut sprite) in &mut doors {
         if door.kind != DoorKind::Airlock {
@@ -277,6 +282,7 @@ mod tests {
     use std::time::Duration;
 
     const DECK: f32 = -360.0;
+    const TEST_DECK_COUNT: usize = 4;
 
     /// The way out says whether it is a way out yet: held shut and red while
     /// there is still a job on the level, green the moment the last of them is
@@ -286,8 +292,9 @@ mod tests {
     fn the_airlock_goes_green_once_every_job_is_signed_off() {
         let mut app = App::new();
         app.init_resource::<Level>();
+        app.init_resource::<Settings>();
         app.init_resource::<Panel>();
-        app.insert_resource(LevelProgress::new(Level::Rocket));
+        app.insert_resource(LevelProgress::new(Level::Rocket, TEST_DECK_COUNT));
         app.add_systems(Update, sync_airlock_lock_state);
 
         let airlock = Door::airlock(0.0, DECK);
@@ -327,10 +334,9 @@ mod tests {
     #[test]
     fn the_airlock_is_at_the_entrance_the_run_opens_at() {
         let airlock = Level::Rocket
-            .doors()
-            .iter()
+            .doors(TEST_DECK_COUNT)
+            .into_iter()
             .find(|door| door.kind == DoorKind::Airlock)
-            .copied()
             .expect("the rocket has no airlock to leave by");
         let spawn = Level::Rocket.player_spawn();
 
@@ -433,8 +439,9 @@ mod tests {
                 &[BULKHEAD_DOOR],
                 (),
                 Level::Rocket,
+                TEST_DECK_COUNT,
                 Panel::default(),
-                LevelProgress::new(Level::Rocket),
+                LevelProgress::new(Level::Rocket, TEST_DECK_COUNT),
             );
         });
         app.add_systems(Update, (move_player, use_doors).chain());
@@ -497,7 +504,7 @@ mod tests {
     fn spawn_rocket_geometry(app: &mut App) {
         let level = Level::Rocket;
 
-        for plate in level.platforms() {
+        for plate in level.platforms(TEST_DECK_COUNT) {
             app.world_mut().spawn((
                 Transform::from_xyz(plate.centre.x, plate.centre.y, 0.0),
                 RigidBody::Fixed,
@@ -505,7 +512,7 @@ mod tests {
             ));
         }
 
-        for wall in level.walls() {
+        for wall in level.walls(TEST_DECK_COUNT) {
             let half_extents = wall.axis.half_extents(wall.length, WALL_THICKNESS);
 
             app.world_mut().spawn((
@@ -518,11 +525,12 @@ mod tests {
         app.add_systems(Startup, |mut commands: Commands| {
             spawn_doors(
                 &mut commands,
-                Level::Rocket.doors(),
+                &Level::Rocket.doors(TEST_DECK_COUNT),
                 (),
                 Level::Rocket,
+                TEST_DECK_COUNT,
                 Panel::default(),
-                LevelProgress::new(Level::Rocket),
+                LevelProgress::new(Level::Rocket, TEST_DECK_COUNT),
             );
         });
     }

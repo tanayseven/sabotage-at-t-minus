@@ -29,6 +29,7 @@ const LINING_TINT: Color = Color::srgb(0.26, 0.28, 0.34);
 /// A solid run of wall. The launch pad and the level proper both build theirs
 /// out of these: the pad's four make a box around the viewport, the rocket's
 /// make its hull and the bulkheads between its rooms.
+#[derive(Debug, Clone, Copy)]
 pub struct Wall {
     pub centre: Vec2,
     pub axis: Axis,
