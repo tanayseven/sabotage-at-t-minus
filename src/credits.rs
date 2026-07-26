@@ -22,7 +22,15 @@ const ROLE_NUDGE: f32 = (NAME_FONT - ROLE_FONT) * 0.6 / 2.0;
 
 /// Each role owns a list of names, printed one per line under a single label.
 const CREDITS: [(&str, &[&str]); 3] = [
-    ("Programming", &["Tanay PrabhuDesai", "Param Siddharth"]),
+    (
+        "Programming",
+        &[
+            "Tanay PrabhuDesai",
+            "Param Siddharth",
+            "Medha Tripathi",
+            "Dipesh Joshi",
+        ],
+    ),
     ("Art", &["Kabir Siddharth"]),
     ("Music", &["Param Siddharth"]),
 ];

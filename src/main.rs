@@ -71,7 +71,7 @@ use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
 use crate::splash::{animate_splash, despawn_splash, skip_splash, spawn_splash};
 use crate::state::{GameState, PlayingState};
-use crate::ui::{FONT_PATH, GameFont, button_visuals, sync_ui_scale};
+use crate::ui::{GameFont, button_visuals, sync_ui_scale};
 
 fn main() {
     let mut app = App::new();
@@ -96,10 +96,10 @@ fn main() {
     #[cfg(feature = "dev")]
     app.add_plugins(RapierDebugRenderPlugin::default());
 
-    // Kicked off here rather than in a startup system: the splash screen spawns
-    // text on the very first `OnEnter`, and it needs the handle to already exist.
-    let font = GameFont(app.world().resource::<AssetServer>().load(FONT_PATH));
-    app.insert_resource(font);
+    // Jersey 10 is the game's one typeface, baked in by `FontPlugin` above as
+    // the default font slot — so the handle this resource wraps is that same
+    // slot rather than a second, separately loaded copy.
+    app.insert_resource(GameFont(Handle::default()));
 
     // Drawn once, here, rather than per run: the codes are what the manual's
     // room index is printed from, and both have to be looking at the same
