@@ -20,7 +20,10 @@ use bevy::text::{LineBreak, LineHeight};
 
 use crate::difficulty::MAX_DECK_COUNT;
 use crate::level::{Room, RoomCodes, Side, deck_index_line};
+use crate::minigame_keys::{MinigameKeys, RoomKeys, key_letter};
+use crate::minigames::MinigameId;
 use crate::panel::Panels;
+use crate::puzzles::RocketPuzzles;
 use crate::settings::Settings;
 use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
 
@@ -88,6 +91,15 @@ const ROOM_INDEX: &str = "\u{0}room_index";
 /// room for the index's three lines of preamble plus one per deck.
 const _: () = assert!(MAX_DECK_COUNT + 3 <= MAX_PAGE_LINES);
 
+/// Stands in for a challenge's per-room key listing, one line a room, for the
+/// same reason [`PANEL_SETTINGS`] does: every room draws its own keys — see
+/// [`crate::minigame_keys`] — so a page written out ahead of a run could not
+/// carry them.
+const WIRE_KEYS: &str = "\u{0}wire_keys";
+const VALVE_KEYS: &str = "\u{0}valve_keys";
+const ENGINE_KEYS: &str = "\u{0}engine_keys";
+const PIPE_KEYS: &str = "\u{0}pipe_keys";
+
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
@@ -126,52 +138,45 @@ const PAGES: [Page; 8] = [
         heading: "1. Damaged Signal Relay Notes",
         lines: &[
             "Fault: a snapped pair feeding the ignition run.",
-            "Found where the deck arcs over: walk into it to take it on.",
+            "Grip both loose ends and press the two keys below in quick",
+            "alternation to pull them tight. If one hand leads too long",
+            "the gap widens again — keep an even rhythm. Every room's",
+            "relay is worked with its own pair:",
             "",
-            "Grip both loose ends and work them back together.",
-            "Tap A, then D, in quick alternation to pull them tight.",
-            "",
-            "If one hand leads too long, the gap widens again.",
-            "Keep an even rhythm until the crackle holds steady.",
+            WIRE_KEYS,
         ],
     },
     Page {
         heading: "2. Coolant Regulator Notes",
         lines: &[
             "Fault: the regulator was backed off and the line runs flat.",
-            "Its gauge stands in a room of its own, as the relays do.",
+            "Hold the key below to feed the line; let go and it bleeds",
+            "back. Settle the needle in the marked band and hold it —",
+            "past the red it ruptures. Every room's valve has its own key:",
             "",
-            "Hold SPACE to feed the line. Let go and it bleeds back.",
-            "Settle the needle inside the marked band and keep it there.",
-            "",
-            "The feed keeps pushing after you let go, so trim early.",
-            "Past the red it ruptures — it vents, and you start again.",
+            VALVE_KEYS,
         ],
     },
     Page {
         heading: "3. Engine Bell Notes",
         lines: &[
             "Fault: the bore was packed with soot after the static fire.",
-            "The brush comes down mid-bore, in a room of its own as the",
-            "rest are. W and S walk it up and down the five courses;",
-            "A, then D, then A cuts along the one it is standing on.",
+            "Two keys walk the brush up and down the courses; two more",
+            "cut along the one it is standing on — only the stroke back",
+            "the other way cuts. Every room's bell has its own four keys:",
             "",
-            "Only the stroke back the other way cuts — leaning on one",
-            "side twice over just drags the brush where it already sat.",
-            "Every course must come clean. Both hands at once is nothing.",
+            ENGINE_KEYS,
         ],
     },
     Page {
         heading: "4. Feed Line Coupling Notes",
         lines: &[
             "Fault: the couplings on a feed run were shaken out of true.",
-            "The line is fed from the wall and drains two decks below.",
+            "Two keys walk the wrench along the run; a third turns the",
+            "coupling under it a quarter turn. The feed fills what it",
+            "can reach. Every room's line has its own three keys:",
             "",
-            "A and D walk the wrench along the run. SPACE turns the",
-            "coupling under it a quarter turn. Every piece takes four.",
-            "",
-            "The feed fills what it can reach, so the wet pipe is the",
-            "progress: work from where it stops, not from the far end.",
+            PIPE_KEYS,
         ],
     },
     // TODO: Document as more minigames are added.
@@ -275,12 +280,15 @@ pub fn reset_manual_page(mut commands: Commands) {
 
 /// `switch_panels` are the isolation panels out in the level, not this one —
 /// the manual has a panel of its own, and one of the two had to give way.
+#[allow(clippy::too_many_arguments)]
 fn spawn_manual(
     commands: &mut Commands,
     codes: &RoomCodes,
     open: ManualPage,
     switch_panels: &Panels,
     deck_count: usize,
+    puzzles: &RocketPuzzles,
+    keys: &RoomKeys,
 ) {
     commands
         .spawn((
@@ -346,7 +354,14 @@ fn spawn_manual(
                             ));
                             body.spawn((
                                 ManualBody,
-                                Text::new(body_text(codes, open, switch_panels, deck_count)),
+                                Text::new(body_text(
+                                    codes,
+                                    open,
+                                    switch_panels,
+                                    deck_count,
+                                    puzzles,
+                                    keys,
+                                )),
                                 TextFont {
                                     font_size: FontSize::Px(BODY_FONT),
                                     ..default()
@@ -414,9 +429,17 @@ fn spawn_manual(
         });
 }
 
-/// The open page's body, with the panels' settings and the room index printed
-/// onto the lines the page leaves for them.
-fn body_text(codes: &RoomCodes, page: ManualPage, panels: &Panels, deck_count: usize) -> String {
+/// The open page's body, with the panels' settings, the room index and the
+/// challenges' per-room keys printed onto the lines the page leaves for them.
+#[allow(clippy::too_many_arguments)]
+fn body_text(
+    codes: &RoomCodes,
+    page: ManualPage,
+    panels: &Panels,
+    deck_count: usize,
+    puzzles: &RocketPuzzles,
+    keys: &RoomKeys,
+) -> String {
     page.page()
         .lines
         .iter()
@@ -431,12 +454,83 @@ fn body_text(codes: &RoomCodes, page: ManualPage, panels: &Panels, deck_count: u
                     .map(|deck| deck_index_line(codes, deck))
                     .collect::<Vec<_>>()
                     .join("\n")
+            } else if *line == WIRE_KEYS {
+                challenge_key_lines(puzzles, keys, codes, MinigameId::BrokenWire, wire_key_line)
+            } else if *line == VALVE_KEYS {
+                challenge_key_lines(puzzles, keys, codes, MinigameId::CoolantValve, valve_key_line)
+            } else if *line == ENGINE_KEYS {
+                challenge_key_lines(puzzles, keys, codes, MinigameId::CleanEngine, engine_key_line)
+            } else if *line == PIPE_KEYS {
+                challenge_key_lines(puzzles, keys, codes, MinigameId::PipeFlow, pipe_key_line)
             } else {
                 (*line).to_string()
             }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// One line per room this run dealt `id`, in the terms `line` prints a room's
+/// keys in. Rooms are read off [`RocketPuzzles`] in room order rather than
+/// gathered some other way, so two rooms dealt the same challenge always
+/// print in the order the player meets them crossing the rocket.
+fn challenge_key_lines(
+    puzzles: &RocketPuzzles,
+    keys: &RoomKeys,
+    codes: &RoomCodes,
+    id: MinigameId,
+    line: impl Fn(&RoomCodes, Room, MinigameKeys) -> String,
+) -> String {
+    puzzles
+        .room_minigames
+        .iter()
+        .enumerate()
+        .filter(|(_, dealt)| **dealt == id)
+        .map(|(index, _)| {
+            let room = Room::from_index(index);
+            line(codes, room, keys.of(room))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The signal relay's two keys: pulled in alternation, so neither is "the"
+/// key over the other.
+fn wire_key_line(codes: &RoomCodes, room: Room, keys: MinigameKeys) -> String {
+    format!(
+        "  #{} pull {} / {}",
+        codes.of(room),
+        key_letter(keys.primary),
+        key_letter(keys.secondary)
+    )
+}
+
+/// The coolant valve's one key: held to feed the line.
+fn valve_key_line(codes: &RoomCodes, room: Room, keys: MinigameKeys) -> String {
+    format!("  #{} hold {}", codes.of(room), key_letter(keys.action))
+}
+
+/// The engine bell's four keys: two to walk the brush, two to cut.
+fn engine_key_line(codes: &RoomCodes, room: Room, keys: MinigameKeys) -> String {
+    format!(
+        "  #{} up {} down {} cut {}/{}",
+        codes.of(room),
+        key_letter(keys.up),
+        key_letter(keys.down),
+        key_letter(keys.primary),
+        key_letter(keys.secondary)
+    )
+}
+
+/// The feed line's three keys: two to walk the wrench, one to turn.
+fn pipe_key_line(codes: &RoomCodes, room: Room, keys: MinigameKeys) -> String {
+    format!(
+        "  #{} move {}/{} turn {}",
+        codes.of(room),
+        key_letter(keys.primary),
+        key_letter(keys.secondary),
+        key_letter(keys.action)
+    )
 }
 
 /// One deck's worth of the isolation panel page: both its rooms, code first
@@ -482,6 +576,8 @@ pub fn manual_controls(
     nav_buttons: Query<(&Interaction, &ManualNav), Changed<Interaction>>,
     screen: Query<Entity, With<ManualScreen>>,
     codes: Res<RoomCodes>,
+    puzzles: Res<RocketPuzzles>,
+    room_keys: Res<RoomKeys>,
 ) {
     let clicked = open_buttons
         .iter()
@@ -496,6 +592,8 @@ pub fn manual_controls(
                 *page,
                 &panels,
                 settings.difficulty.deck_count(),
+                &puzzles,
+                &room_keys,
             );
         }
         return;
@@ -538,6 +636,8 @@ pub fn sync_manual_page(
     page: Res<ManualPage>,
     panels: Res<Panels>,
     settings: Res<Settings>,
+    puzzles: Res<RocketPuzzles>,
+    room_keys: Res<RoomKeys>,
     mut texts: ParamSet<(
         Query<&mut Text, With<ManualHeading>>,
         Query<&mut Text, With<ManualBody>>,
@@ -556,7 +656,7 @@ pub fn sync_manual_page(
         **text = page.page().heading.to_string();
     }
     for mut text in &mut texts.p1() {
-        **text = body_text(&codes, *page, &panels, deck_count);
+        **text = body_text(&codes, *page, &panels, deck_count, &puzzles, &room_keys);
     }
     for mut text in &mut texts.p2() {
         **text = page.label();
@@ -577,12 +677,15 @@ mod tests {
 
     use super::{
         MAX_LINE_CHARS, MAX_PAGE_LINES, ManualPage, ManualScreen, PAGE_HEIGHT, PAGES,
-        PANEL_SETTINGS, body_text, deck_panel_line, manual_controls,
+        PANEL_SETTINGS, body_text, deck_panel_line, engine_key_line, manual_controls,
+        pipe_key_line, valve_key_line, wire_key_line,
     };
     use crate::config::DESIGN_HEIGHT;
     use crate::difficulty::MAX_DECK_COUNT;
     use crate::level::{Level, ROOMS_PER_DECK, RoomCodes, deck_index_line};
+    use crate::minigame_keys::RoomKeys;
     use crate::panel::Panels;
+    use crate::puzzles::RocketPuzzles;
     use crate::settings::Settings;
 
     /// Stands in for whichever difficulty a real run picks; the widest tier,
@@ -599,6 +702,8 @@ mod tests {
             .init_resource::<ManualPage>()
             .insert_resource(Panels::from_seed(0, Level::Rocket, TEST_DECK_COUNT))
             .init_resource::<Settings>()
+            .insert_resource(RocketPuzzles::from_seed(0, TEST_ROOM_COUNT))
+            .insert_resource(RoomKeys::from_seed(0, TEST_ROOM_COUNT))
             // Nothing renders here; the codes only have to exist for the page
             // to be built.
             .insert_resource(RoomCodes::random(TEST_ROOM_COUNT))
@@ -805,6 +910,8 @@ mod tests {
             let room_count = deck_count * ROOMS_PER_DECK;
             let codes = RoomCodes::random(room_count);
             let panels = Panels::from_seed(0, Level::Rocket, deck_count);
+            let puzzles = RocketPuzzles::from_seed(0, room_count);
+            let room_keys = RoomKeys::from_seed(0, room_count);
             let page = (0..PAGES.len())
                 .map(|index| {
                     let mut page = ManualPage::default();
@@ -814,7 +921,7 @@ mod tests {
                 .find(|page| page.page().heading == "Room Index")
                 .expect("the manual has no room index page");
 
-            let body = body_text(&codes, page, &panels, deck_count);
+            let body = body_text(&codes, page, &panels, deck_count, &puzzles, &room_keys);
 
             assert!(
                 body.lines().count() <= MAX_PAGE_LINES,
@@ -860,6 +967,8 @@ mod tests {
             let room_count = deck_count * ROOMS_PER_DECK;
             let codes = RoomCodes::random(room_count);
             let panels = Panels::from_seed(0, Level::Rocket, deck_count);
+            let puzzles = RocketPuzzles::from_seed(0, room_count);
+            let room_keys = RoomKeys::from_seed(0, room_count);
             let page = (0..PAGES.len())
                 .map(|index| {
                     let mut page = ManualPage::default();
@@ -869,13 +978,125 @@ mod tests {
                 .find(|page| page.page().heading == "Isolation Panels")
                 .expect("the manual has no isolation panels page");
 
-            let body = body_text(&codes, page, &panels, deck_count);
+            let body = body_text(&codes, page, &panels, deck_count, &puzzles, &room_keys);
 
             assert!(
                 body.lines().count() <= MAX_PAGE_LINES,
                 "{}'s isolation panels page runs to {} lines, past the page's {MAX_PAGE_LINES}",
                 difficulty.label(),
                 body.lines().count()
+            );
+        }
+    }
+
+    /// However many decks the run turns out to have, and however many rooms
+    /// that spreads a challenge over, each challenge's key page must not spill
+    /// past the fixed box it is drawn in — the worst case is however many
+    /// rooms one kind of challenge can land in at the widest difficulty.
+    #[test]
+    fn every_challenge_s_key_page_fits_the_page_at_every_difficulty() {
+        use crate::difficulty::Difficulty;
+
+        let headings = [
+            "1. Damaged Signal Relay Notes",
+            "2. Coolant Regulator Notes",
+            "3. Engine Bell Notes",
+            "4. Feed Line Coupling Notes",
+        ];
+
+        for difficulty in Difficulty::ALL {
+            let deck_count = difficulty.deck_count();
+            let room_count = deck_count * ROOMS_PER_DECK;
+
+            for seed in 0..32u64 {
+                let codes = RoomCodes::random(room_count);
+                let panels = Panels::from_seed(seed, Level::Rocket, deck_count);
+                let puzzles = RocketPuzzles::from_seed(seed, room_count);
+                let room_keys = RoomKeys::from_seed(seed, room_count);
+
+                for heading in headings {
+                    let page = (0..PAGES.len())
+                        .map(|index| {
+                            let mut page = ManualPage::default();
+                            page.turn(index as isize);
+                            page
+                        })
+                        .find(|page| page.page().heading == heading)
+                        .unwrap_or_else(|| panic!("the manual has no {heading} page"));
+
+                    let body =
+                        body_text(&codes, page, &panels, deck_count, &puzzles, &room_keys);
+
+                    assert!(
+                        body.lines().count() <= MAX_PAGE_LINES,
+                        "{}'s {heading} runs to {} lines at seed {seed}, past the page's {MAX_PAGE_LINES}",
+                        difficulty.label(),
+                        body.lines().count()
+                    );
+
+                    for line in body.lines() {
+                        assert!(
+                            line.chars().count() <= MAX_LINE_CHARS,
+                            "{heading} prints a line too wide for the page: {line:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The point of the pages: every room's challenge has its own keys
+    /// printed for it, so a player standing at any breach can look its room up
+    /// and find the exact hand it was dealt.
+    #[test]
+    fn every_room_s_challenge_prints_its_own_keys() {
+        use crate::minigames::MinigameId;
+
+        let codes = RoomCodes::random(TEST_ROOM_COUNT);
+        let puzzles = RocketPuzzles::from_seed(5, TEST_ROOM_COUNT);
+        let room_keys = RoomKeys::from_seed(5, TEST_ROOM_COUNT);
+        let panels = Panels::from_seed(5, Level::Rocket, TEST_DECK_COUNT);
+
+        let heading_for = |id: MinigameId| match id {
+            MinigameId::BrokenWire => "1. Damaged Signal Relay Notes",
+            MinigameId::CoolantValve => "2. Coolant Regulator Notes",
+            MinigameId::CleanEngine => "3. Engine Bell Notes",
+            MinigameId::PipeFlow => "4. Feed Line Coupling Notes",
+        };
+        let line_for = |id: MinigameId, room, keys| match id {
+            MinigameId::BrokenWire => wire_key_line(&codes, room, keys),
+            MinigameId::CoolantValve => valve_key_line(&codes, room, keys),
+            MinigameId::CleanEngine => engine_key_line(&codes, room, keys),
+            MinigameId::PipeFlow => pipe_key_line(&codes, room, keys),
+        };
+
+        for index in 0..TEST_ROOM_COUNT {
+            let room = crate::level::Room::from_index(index);
+            let id = puzzles.room_minigames[index];
+            let expected = line_for(id, room, room_keys.of(room));
+
+            let page = (0..PAGES.len())
+                .map(|page_index| {
+                    let mut page = ManualPage::default();
+                    page.turn(page_index as isize);
+                    page
+                })
+                .find(|page| page.page().heading == heading_for(id))
+                .expect("every challenge has a notes page");
+
+            let body = body_text(
+                &codes,
+                page,
+                &panels,
+                TEST_DECK_COUNT,
+                &puzzles,
+                &room_keys,
+            );
+
+            assert!(
+                body.contains(&expected),
+                "the {} page does not print {expected:?}",
+                heading_for(id),
             );
         }
     }
@@ -887,6 +1108,8 @@ mod tests {
     fn the_manual_prints_every_room_s_combination() {
         let panels = Panels::from_seed(11, Level::Rocket, TEST_DECK_COUNT);
         let codes = RoomCodes::random(TEST_ROOM_COUNT);
+        let puzzles = RocketPuzzles::from_seed(11, TEST_ROOM_COUNT);
+        let room_keys = RoomKeys::from_seed(11, TEST_ROOM_COUNT);
         let page = (0..PAGES.len())
             .map(|index| {
                 let mut page = ManualPage::default();
@@ -896,7 +1119,14 @@ mod tests {
             .find(|page| page.page().heading == "Isolation Panels")
             .expect("the manual has no isolation panels page");
 
-        let body = body_text(&codes, page, &panels, TEST_DECK_COUNT);
+        let body = body_text(
+            &codes,
+            page,
+            &panels,
+            TEST_DECK_COUNT,
+            &puzzles,
+            &room_keys,
+        );
 
         assert!(
             !body.contains(PANEL_SETTINGS),
@@ -915,6 +1145,8 @@ mod tests {
     #[test]
     fn the_pages_without_a_setting_are_printed_as_written() {
         let panels = Panels::from_seed(11, Level::Rocket, TEST_DECK_COUNT);
+        let puzzles = RocketPuzzles::from_seed(11, TEST_ROOM_COUNT);
+        let room_keys = RoomKeys::from_seed(11, TEST_ROOM_COUNT);
         let mut page = ManualPage::default();
 
         assert_eq!(
@@ -922,7 +1154,9 @@ mod tests {
                 &RoomCodes::random(TEST_ROOM_COUNT),
                 page,
                 &panels,
-                TEST_DECK_COUNT
+                TEST_DECK_COUNT,
+                &puzzles,
+                &room_keys,
             ),
             PAGES[0].lines.join("\n")
         );
@@ -933,7 +1167,9 @@ mod tests {
                 &RoomCodes::random(TEST_ROOM_COUNT),
                 page,
                 &panels,
-                TEST_DECK_COUNT
+                TEST_DECK_COUNT,
+                &puzzles,
+                &room_keys,
             ),
             PAGES[PAGES.len() - 1].lines.join("\n")
         );

@@ -4,6 +4,7 @@ use super::{
     MinigameAudioCue, MinigameInstance, MinigameOutcome, MinigameVisualState,
     SequenceWireVisualState,
 };
+use crate::minigame_keys::MinigameKeys;
 
 const START_SEPARATION: f32 = 170.0;
 const MAX_SEPARATION: f32 = 280.0;
@@ -22,13 +23,17 @@ enum BrokenWirePhase {
 pub struct BrokenWire {
     separation: f32,
     phase: BrokenWirePhase,
+    pull_one: KeyCode,
+    pull_two: KeyCode,
 }
 
 impl BrokenWire {
-    pub fn new() -> Self {
+    pub fn new(keys: MinigameKeys) -> Self {
         Self {
             separation: START_SEPARATION,
             phase: BrokenWirePhase::Pulling,
+            pull_one: keys.primary,
+            pull_two: keys.secondary,
         }
     }
 }
@@ -76,10 +81,10 @@ impl MinigameInstance for BrokenWire {
                     (self.separation + SPREAD_SPEED * delta_seconds).min(MAX_SEPARATION);
 
                 let mut pulls = 0.0;
-                if keys.just_pressed(KeyCode::KeyA) {
+                if keys.just_pressed(self.pull_one) {
                     pulls += 1.0;
                 }
-                if keys.just_pressed(KeyCode::KeyD) {
+                if keys.just_pressed(self.pull_two) {
                     pulls += 1.0;
                 }
 

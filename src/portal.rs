@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::level::Room;
 use crate::minigames::queue_minigame;
 use crate::player::Player;
 use crate::puzzles::RocketPuzzles;
@@ -29,6 +30,10 @@ const SPARK_COOL: Color = Color::srgba(0.16, 0.42, 0.85, 1.0);
 #[derive(Component, Clone, Copy)]
 pub struct Portal {
     pub minigame: crate::minigames::MinigameId,
+    /// Which room this breach is in — what the challenge behind it draws its
+    /// keys from, so a room dealt the same [`crate::minigames::MinigameId`] as
+    /// another still asks for a different hand. See [`crate::minigame_keys`].
+    pub room: Room,
     pub used: bool,
 }
 
@@ -54,11 +59,12 @@ pub fn spawn_portals(
 ) {
     let texture = load_pixel_art(assets, PORTAL_SPRITE);
 
-    for (position, minigame) in puzzles.portal_placements() {
+    for (room, position, minigame) in puzzles.portal_placements() {
         commands.spawn((
             marker.clone(),
             Portal {
                 minigame,
+                room,
                 used: false,
             },
             PortalPulse,
@@ -112,6 +118,7 @@ pub fn enter_portal(
         &mut commands,
         crate::minigames::MinigameConfig {
             id: portal.minigame,
+            room: portal.room,
         },
     );
     next_playing.set(PlayingState::Minigame);

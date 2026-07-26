@@ -12,6 +12,7 @@ mod launchpad;
 mod level;
 mod manual;
 mod menu;
+mod minigame_keys;
 mod minigames;
 mod mission_complete;
 mod music;
@@ -56,6 +57,7 @@ use crate::manual::{
     ManualPage, despawn_manual, manual_controls, reset_manual_page, sync_manual_page,
 };
 use crate::menu::{despawn_menu, menu_action, spawn_menu};
+use crate::minigame_keys::RoomKeys;
 use crate::minigames::{
     clear_active_minigame, despawn_minigame_window, run_active_minigame, spawn_minigame_window,
 };
@@ -114,6 +116,7 @@ fn main() {
         .init_resource::<Level>()
         .init_resource::<Panels>()
         .init_resource::<RocketPuzzles>()
+        .init_resource::<RoomKeys>()
         .init_resource::<ManualPage>()
         .add_systems(Startup, (configure_physics, setup_camera))
         .add_systems(OnEnter(GameState::Splash), spawn_splash)

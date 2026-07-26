@@ -72,11 +72,14 @@ impl RocketPuzzles {
 
     /// Where the run's breaches stand and which challenge each one opens: one
     /// per room of the rocket.
-    pub fn portal_placements(&self) -> Vec<(Vec2, MinigameId)> {
+    pub fn portal_placements(&self) -> Vec<(Room, Vec2, MinigameId)> {
         self.room_minigames
             .iter()
             .enumerate()
-            .map(|(room, minigame)| (Room::from_index(room).portal_mount(), *minigame))
+            .map(|(room, minigame)| {
+                let room = Room::from_index(room);
+                (room, room.portal_mount(), *minigame)
+            })
             .collect()
     }
 }
@@ -100,7 +103,9 @@ mod tests {
             let room = Room::from_index(index);
 
             assert!(
-                placements.iter().any(|(at, _)| *at == room.portal_mount()),
+                placements
+                    .iter()
+                    .any(|(_, at, _)| *at == room.portal_mount()),
                 "{} has no breach in it",
                 room.label()
             );

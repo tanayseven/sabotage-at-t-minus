@@ -2,11 +2,12 @@
 //!
 //! The bore is worked as a grid: a stack of courses running around it, each of
 //! which has to be cut clean before the bell will pass. Two hands do two
-//! different jobs — W and S walk the brush up and down the courses, A and D cut
-//! along the course it is standing on — and neither is any use without the
-//! other. That split is the point of the challenge: everything else in the game
-//! is worked with one control, and this is the one that asks the player to hold
-//! a position *and* a rhythm at the same time.
+//! different jobs — one pair of keys walks the brush up and down the courses,
+//! another cuts along the course it is standing on — and neither is any use
+//! without the other. That split is the point of the challenge: everything
+//! else in the game is worked with one control, and this is the one that asks
+//! the player to hold a position *and* a rhythm at the same time. Which keys
+//! do which job is dealt fresh with the room — see [`crate::minigame_keys`].
 //!
 //! The brush is set down in the middle of the bore rather than at one end, so
 //! the job opens as a choice of which way to work rather than as a list to run
@@ -15,8 +16,9 @@
 //!
 //! The rhythm rule is that a stroke only counts if it goes back the other way.
 //! Leaning on one key does nothing after the first press, so the player has to
-//! work A and D against each other rather than mash a single side — which is
-//! what makes it read as scrubbing rather than as a button count.
+//! work the two cutting keys against each other rather than mash a single
+//! side — which is what makes it read as scrubbing rather than as a button
+//! count.
 //!
 //! There is no way to lose in here. The bore never re-fouls and the challenge
 //! never returns a failure: the only pressure is the launch clock running
@@ -29,6 +31,7 @@ use super::{
     BORE_CELLS, BORE_ROWS, EngineBoreVisualState, MinigameInstance, MinigameOutcome,
     MinigameVisualState,
 };
+use crate::minigame_keys::MinigameKeys;
 
 /// Courses stacked up the bore — the rows of the grid. Taken from the art
 /// rather than set here: the grid is painted into both plates, so a second
@@ -82,14 +85,26 @@ pub struct CleanEngine {
     row: usize,
     /// The side the brush was last pulled to on this course.
     last: Option<Side>,
+    /// Cuts the course toward [`Side::Left`].
+    left_key: KeyCode,
+    /// Cuts the course toward [`Side::Right`].
+    right_key: KeyCode,
+    /// Walks the brush up a course.
+    up_key: KeyCode,
+    /// Walks the brush down a course.
+    down_key: KeyCode,
 }
 
 impl CleanEngine {
-    pub fn new() -> Self {
+    pub fn new(keys: MinigameKeys) -> Self {
         Self {
             rows: [0; ROWS],
             row: STARTING_ROW,
             last: None,
+            left_key: keys.primary,
+            right_key: keys.secondary,
+            up_key: keys.up,
+            down_key: keys.down,
         }
     }
 
@@ -141,10 +156,10 @@ impl CleanEngine {
     /// deliberately nothing: with two hands down there is no telling which way
     /// the brush went, and letting it count would hand the player a way to
     /// scrub twice as fast by pressing both together instead of alternating.
-    fn asked_for(keys: &ButtonInput<KeyCode>) -> Option<Side> {
+    fn asked_for(&self, keys: &ButtonInput<KeyCode>) -> Option<Side> {
         match (
-            keys.just_pressed(KeyCode::KeyA),
-            keys.just_pressed(KeyCode::KeyD),
+            keys.just_pressed(self.left_key),
+            keys.just_pressed(self.right_key),
         ) {
             (true, false) => Some(Side::Left),
             (false, true) => Some(Side::Right),
@@ -154,10 +169,10 @@ impl CleanEngine {
 
     /// How far up or down the bore the brush was asked to go this frame. Both
     /// keys at once cancel for the same reason both hands do.
-    fn walked(keys: &ButtonInput<KeyCode>) -> isize {
+    fn walked(&self, keys: &ButtonInput<KeyCode>) -> isize {
         match (
-            keys.just_pressed(KeyCode::KeyW),
-            keys.just_pressed(KeyCode::KeyS),
+            keys.just_pressed(self.up_key),
+            keys.just_pressed(self.down_key),
         ) {
             (true, false) => -1,
             (false, true) => 1,
@@ -198,12 +213,12 @@ impl MinigameInstance for CleanEngine {
         // Walking first, so a press that moves the brush and a press that cuts
         // can both land in one frame without the cut going onto the course the
         // player has just left.
-        let by = Self::walked(keys);
+        let by = self.walked(keys);
         if by != 0 {
             self.walk(by);
         }
 
-        if let Some(side) = Self::asked_for(keys) {
+        if let Some(side) = self.asked_for(keys) {
             self.pull(side);
         }
 
@@ -216,6 +231,17 @@ impl MinigameInstance for CleanEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stands in for a room's dealt keys, matching the letters the rest of
+    /// these tests press — so a `CleanEngine` built with it plays exactly the
+    /// hand these tests assume.
+    const TEST_KEYS: MinigameKeys = MinigameKeys {
+        primary: KeyCode::KeyA,
+        secondary: KeyCode::KeyD,
+        up: KeyCode::KeyW,
+        down: KeyCode::KeyS,
+        action: KeyCode::Space,
+    };
 
     /// A frame's worth of time. Nothing in here reads the clock, but `tick`
     /// still has to be handed one.
@@ -272,7 +298,7 @@ mod tests {
 
     #[test]
     fn a_fresh_bell_is_filthy_and_unfinished() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         assert_eq!(game.rows, [0; ROWS]);
         assert_eq!(tick_with(&mut game, &[]), None, "it signed itself off");
@@ -284,7 +310,7 @@ mod tests {
     /// the top of a list.
     #[test]
     fn the_brush_starts_in_the_middle_of_the_bore() {
-        let game = CleanEngine::new();
+        let game = CleanEngine::new(TEST_KEYS);
 
         assert_eq!(game.row, STARTING_ROW);
         assert_eq!(
@@ -296,7 +322,7 @@ mod tests {
 
     #[test]
     fn alternating_strokes_cut_along_the_course() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         scrub(&mut game, 3);
 
@@ -311,7 +337,7 @@ mod tests {
     /// The rule the challenge exists for: the brush only cuts on the way back.
     #[test]
     fn leaning_on_one_side_only_counts_once() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         for _ in 0..6 {
             tick_with(&mut game, &[KeyCode::KeyA]);
@@ -331,7 +357,7 @@ mod tests {
     /// would scrub twice a frame and beat alternating outright.
     #[test]
     fn both_hands_at_once_is_not_a_stroke() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         for _ in 0..5 {
             tick_with(&mut game, &[KeyCode::KeyA, KeyCode::KeyD]);
@@ -342,7 +368,7 @@ mod tests {
 
     #[test]
     fn either_side_may_open_a_course() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
         tick_with(&mut game, &[KeyCode::KeyD]);
 
         assert_eq!(
@@ -354,7 +380,7 @@ mod tests {
 
     #[test]
     fn w_and_s_walk_the_brush_up_and_down_the_bore() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         tick_with(&mut game, &[KeyCode::KeyS]);
         assert_eq!(game.row, STARTING_ROW + 1);
@@ -370,7 +396,7 @@ mod tests {
     /// longer walk to the end the player was going to work from anyway.
     #[test]
     fn the_bore_runs_both_ways_from_where_the_brush_starts() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         tick_with(&mut game, &[KeyCode::KeyW]);
         scrub(&mut game, 1);
@@ -390,7 +416,7 @@ mod tests {
     /// somewhere the display does not draw.
     #[test]
     fn the_brush_stops_at_the_ends_of_the_bore() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         for _ in 0..ROWS + 3 {
             tick_with(&mut game, &[KeyCode::KeyW]);
@@ -408,7 +434,7 @@ mod tests {
     /// no reason the player could see.
     #[test]
     fn changing_course_lets_either_side_open_again() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         tick_with(&mut game, &[KeyCode::KeyA]);
         tick_with(&mut game, &[KeyCode::KeyS]);
@@ -426,7 +452,7 @@ mod tests {
     /// brush on rather than keep working a clean one.
     #[test]
     fn a_course_already_cut_takes_nothing_more() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         scrub(&mut game, CELLS_PER_ROW + 5);
 
@@ -441,14 +467,14 @@ mod tests {
     /// One course cut is not the job — the sign-off waits for the whole bore.
     #[test]
     fn one_clean_course_does_not_sign_the_job_off() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         assert_eq!(scrub(&mut game, CELLS_PER_ROW), None);
     }
 
     #[test]
     fn cutting_every_course_signs_the_job_off() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         assert_eq!(
             scrub_the_whole_bore(&mut game),
@@ -461,7 +487,7 @@ mod tests {
     /// brush would leave the plates showing a bore nobody is working.
     #[test]
     fn the_picture_follows_the_brush_and_the_cutting() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
         tick_with(&mut game, &[KeyCode::KeyS]);
         scrub(&mut game, 2);
 
@@ -479,7 +505,7 @@ mod tests {
     /// bore's own background past the end of the picture.
     #[test]
     fn no_course_is_ever_drawn_cut_past_its_end() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         for _ in 0..ROWS {
             scrub(&mut game, CELLS_PER_ROW + 3);
@@ -503,7 +529,7 @@ mod tests {
 
     #[test]
     fn the_status_line_fits_the_window() {
-        let mut game = CleanEngine::new();
+        let mut game = CleanEngine::new(TEST_KEYS);
 
         for _ in 0..ROWS {
             let status = game.status();
