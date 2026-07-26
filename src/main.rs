@@ -124,14 +124,18 @@ fn main() {
         .add_systems(OnEnter(GameState::Menu), spawn_menu)
         .add_systems(Update, menu_action.run_if(in_state(GameState::Menu)))
         .add_systems(OnExit(GameState::Menu), despawn_menu)
-        .add_systems(OnEnter(GameState::Options), spawn_options)
+        // The track plays here too, muted nowhere else the menu leads, so a
+        // drag of the slider is heard against something rather than against
+        // silence — otherwise `apply_music_volume` has nothing to prove it
+        // works until the next run.
+        .add_systems(OnEnter(GameState::Options), (spawn_options, start_music))
         .add_systems(
             Update,
             (volume_step_action, sync_volume_widgets, back_to_menu)
                 .chain()
                 .run_if(in_state(GameState::Options)),
         )
-        .add_systems(OnExit(GameState::Options), despawn_options)
+        .add_systems(OnExit(GameState::Options), (despawn_options, stop_music))
         .add_systems(OnEnter(GameState::Credits), spawn_credits)
         .add_systems(Update, back_to_menu.run_if(in_state(GameState::Credits)))
         .add_systems(OnExit(GameState::Credits), despawn_credits)
