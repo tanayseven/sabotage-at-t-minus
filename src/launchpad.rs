@@ -11,7 +11,7 @@ use crate::platform::Platform;
 use crate::player::{Player, spawn_player};
 use crate::state::GameState;
 use crate::tiles::{Axis, TileRun, TileSet, load_tiles};
-use crate::ui::{ACCENT, MUTED_TEXT};
+use crate::ui::ACCENT;
 use crate::wall::spawn_walls;
 
 const ROCKET_SPRITE: &str = "rocket.png";
@@ -37,6 +37,11 @@ const SKY_SIZE: Vec2 = Vec2::new(DESIGN_WIDTH, DESIGN_HEIGHT);
 /// multiplied rather than divided so the two ratios compare without rounding.
 const _: () = assert!(SKY_PIXELS.x * SKY_SIZE.y == SKY_SIZE.x * SKY_PIXELS.y);
 const SKY_Z: f32 = -9.0;
+/// The pad's hints are read off the sky rather than off the dark backdrop the
+/// rest of the game's text sits on, so they are dark where [`crate::ui::MUTED_TEXT`]
+/// is pale. Near-black slate rather than true black: it has to hold up over the
+/// white of the clouds and the blue behind them both.
+const HINT_TEXT: Color = Color::srgb(0.11, 0.15, 0.24);
 
 /// Behind the bridge and the player, so the deck reads as running *into* the
 /// rocket rather than stopping short of it.
@@ -180,7 +185,7 @@ fn spawn_launchpad_hud(commands: &mut Commands) {
                     font_size: FontSize::Px(22.0),
                     ..default()
                 },
-                TextColor(MUTED_TEXT),
+                TextColor(HINT_TEXT),
             ));
             parent.spawn((
                 Text::new("Esc - back to menu"),
@@ -188,7 +193,7 @@ fn spawn_launchpad_hud(commands: &mut Commands) {
                     font_size: FontSize::Px(18.0),
                     ..default()
                 },
-                TextColor(MUTED_TEXT),
+                TextColor(HINT_TEXT),
             ));
         });
 }
