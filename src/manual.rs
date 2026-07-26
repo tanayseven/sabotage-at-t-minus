@@ -91,7 +91,7 @@ const _: () = assert!(DECK_COUNT + 3 <= MAX_PAGE_LINES);
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 6] = [
+const PAGES: [Page; 7] = [
     Page {
         heading: "Read This First",
         lines: &[
@@ -154,9 +154,22 @@ const PAGES: [Page; 6] = [
             "Past the red it ruptures — it vents, and you start again.",
         ],
     },
+    Page {
+        heading: "3. Engine Bell Notes",
+        lines: &[
+            "Fault: the bore was packed with soot after the static fire.",
+            "The brush comes down mid-bore, in a room of its own as the",
+            "rest are. W and S walk it up and down the five courses;",
+            "A, then D, then A cuts along the one it is standing on.",
+            "",
+            "Only the stroke back the other way cuts — leaning on one",
+            "side twice over just drags the brush where it already sat.",
+            "Every course must come clean. Both hands at once is nothing.",
+        ],
+    },
     // TODO: Document as more minigames are added.
     /* Page {
-        heading: "3. Gimbal Lock, Engine Mount",
+        heading: "4. Gimbal Lock, Engine Mount",
         lines: &[
             "Symptom: the nozzle will not swing; steering is dead.",
             "",
@@ -169,7 +182,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "4. Ignition Relay, Upper Deck",
+        heading: "5. Ignition Relay, Upper Deck",
         lines: &[
             "Symptom: the arming light stays dark on a good circuit.",
             "",
@@ -184,11 +197,12 @@ const PAGES: [Page; 6] = [
     Page {
         heading: "Sign-Off",
         lines: &[
-            "The airlock stays locked until all three are signed off:",
+            "The airlock stays locked until every job is signed off:",
             "",
             "  Isolation panel set, all three lamps up.",
             "  Signal relay jointed, the crackle steady.",
             "  Coolant regulator sealed, the needle held in band.",
+            "  Engine bell scrubbed out, no soot left in the bore.",
             "",
             "Then get clear. The clock does not wait for the paperwork.",
         ],

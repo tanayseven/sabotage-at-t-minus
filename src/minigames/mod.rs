@@ -7,6 +7,7 @@ use crate::tiles::load_pixel_art;
 use crate::ui::GameFont;
 
 mod broken_wire;
+mod clean_engine;
 mod coolant_valve;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -43,20 +44,24 @@ const GAUGE_TRACK_WIDTH: f32 = 432.0 / 512.0;
 
 /// How many kinds of challenge there are. What anything handing out one
 /// challenge per room counts against.
-pub const MINIGAME_COUNT: usize = 2;
+pub const MINIGAME_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     BrokenWire,
     CoolantValve,
+    CleanEngine,
 }
 
 impl MinigameId {
     /// Every challenge in the game, in the order the manual documents them.
     /// A run installs one of each rather than picking from them, so this is the
     /// list the rooms are dealt out against.
-    pub const ALL: [MinigameId; MINIGAME_COUNT] =
-        [MinigameId::BrokenWire, MinigameId::CoolantValve];
+    pub const ALL: [MinigameId; MINIGAME_COUNT] = [
+        MinigameId::BrokenWire,
+        MinigameId::CoolantValve,
+        MinigameId::CleanEngine,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -576,6 +581,9 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
         MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new()),
+        // No art of its own yet: the default `visual_state` prints `status`
+        // into the window's text, which is the whole of its display.
+        MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new()),
     }
 }
 
