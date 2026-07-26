@@ -9,25 +9,14 @@ use crate::panel::{Panel, spawn_panel_status};
 use crate::quit::QuitButton;
 use crate::setup::GameEntity;
 
-/// Rubik Pixels, the game's typeface.
-pub const FONT_PATH: &str = "fonts/RubikPixels-Regular.ttf";
-
-/// The loaded typeface, set explicitly rather than installed over Bevy's
-/// default font handle, because only one line per screen wears it: the title.
-/// Everything read rather than glanced at — subtitles, button labels, the HUD,
-/// the repair manual — stays in the engine's plain face, which a pixel font of
-/// this kind is no good for at those sizes.
+/// Jersey 10, the game's one typeface — the same handle [`crate::font::FontPlugin`]
+/// installs as Bevy's default, wrapped here so a caller can pick a size for it.
 #[derive(Resource, Clone)]
 pub struct GameFont(pub Handle<Font>);
 
 impl GameFont {
     /// The one way this game builds a [`TextFont`]; the size is all a caller
     /// ever varies.
-    ///
-    /// Smoothing stays on, counter-intuitive as that is for a pixel face: this
-    /// one draws its letters as loose scatters of small squares, and turning
-    /// antialiasing off drops the sparser ones below a whole pixel and the
-    /// words come apart.
     pub fn at(&self, font_size: f32) -> TextFont {
         TextFont::from_font_size(FontSize::Px(font_size)).with_font(self.0.clone())
     }
@@ -58,6 +47,9 @@ const HUD_COUNTDOWN_FONT: f32 = 56.0;
 /// not much under: the pixel face stops reading below the mid-thirties.
 const HUD_TITLE_FONT: f32 = 36.0;
 const HUD_STATUS_FONT: f32 = 20.0;
+/// 1.5x the engine's default 20px, so the controls read at a glance rather
+/// than needing to be sought out.
+const HUD_CONTROLS_FONT: f32 = 30.0;
 
 const BACK_BUTTON_SIZE: Vec2 = Vec2::new(200.0, 56.0);
 const BACK_BUTTON_FONT: f32 = 24.0;
@@ -168,7 +160,11 @@ pub fn spawn_hud(
         Text::new(
             "A/D to move, W / space to jump, W/S on a ladder\nE to work a door or throw a switch — M for the repair manual",
         ),
-        TextColor(TITLE_BLUE),
+        TextFont {
+            font_size: FontSize::Px(HUD_CONTROLS_FONT),
+            ..default()
+        },
+        TextColor(ACCENT),
         Node {
             position_type: PositionType::Absolute,
             bottom: px(16),

@@ -178,7 +178,7 @@ fn spawn_launchpad_hud(commands: &mut Commands, font: &GameFont) {
                     font_size: FontSize::Px(22.0),
                     ..default()
                 },
-                TextColor(HINT_TEXT),
+                TextColor(ACCENT),
             ));
             parent.spawn((
                 Text::new("Esc - back to menu"),
