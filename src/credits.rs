@@ -6,7 +6,7 @@ use crate::ui::{ACCENT, BACKDROP, GameFont, MUTED_TEXT, spawn_back_button};
 /// Names in [`CREDITS`] that point somewhere further — their entry in the
 /// table doubles as a link, opened in the system browser when clicked, rather
 /// than just being read.
-const CREDIT_LINKS: &[(&str, &str)] = &[("BrainClaim", "https://freesound.org/people/BrainClaim/")];
+const CREDIT_LINKS: &[(&str, &str)] = &[("Param Siddharth", "https://www.paramsid.com/"), ("Tanay PrabhuDesai", "http://tanay.tech/")];
 
 fn credit_link(name: &str) -> Option<&'static str> {
     CREDIT_LINKS
@@ -50,7 +50,7 @@ const CREDITS: [(&str, &[&str]); 3] = [
         ],
     ),
     ("Art", &["Kabir Siddharth"]),
-    ("Music", &["Param Siddharth", "BrainClaim"]),
+    ("Music", &["Param Siddharth"]),
 ];
 
 const COLOPHON: [&str; 2] = [
