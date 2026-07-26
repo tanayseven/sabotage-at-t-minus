@@ -6,7 +6,9 @@
 
 use bevy::prelude::*;
 
-use crate::config::{DESIGN_HEIGHT, PLATFORM_HEIGHT, PLAYER_HEIGHT, WALL_THICKNESS};
+use crate::config::{
+    DESIGN_HEIGHT, PLATFORM_HEIGHT, PLAYER_HEIGHT, VIEW_HEIGHT, VIEW_WIDTH, WALL_THICKNESS,
+};
 use crate::platform::Platform;
 use crate::player::{Player, spawn_player};
 use crate::state::GameState;
@@ -26,6 +28,34 @@ const HATCH_FROM_TOP: f32 = 0.3135;
 const ROCKET_HEIGHT: f32 = 520.0;
 const ROCKET_WIDTH: f32 = ROCKET_HEIGHT * ROCKET_PIXELS.x / ROCKET_PIXELS.y;
 const ROCKET_X: f32 = 400.0;
+
+/// The country the pad stands in, behind everything on the screen.
+const SKY_SPRITE: &str = "rocket-background.png";
+const SKY_PIXELS: Vec2 = Vec2::new(1920.0, 1080.0);
+/// Cropped rather than squashed: the shorter side is what gets trimmed, so the
+/// horizon stays level whatever shape the window is.
+const SKY_SIZE: Vec2 = cover(Vec2::new(VIEW_WIDTH, VIEW_HEIGHT), SKY_PIXELS);
+/// The sky is the only thing behind the pad, so a gap at either edge would show
+/// the void through it.
+const _: () = assert!(SKY_SIZE.x >= VIEW_WIDTH && SKY_SIZE.y >= VIEW_HEIGHT);
+const SKY_Z: f32 = -9.0;
+/// Dusk rather than noon. The pad is the way into a rocket lit by dim plating,
+/// and a full-brightness sky both fights that and washes out the hint text the
+/// pad prints across the top of it.
+const SKY_TINT: Color = Color::srgb(0.5, 0.54, 0.62);
+
+/// The size to draw `art` at to cover `view` whole without distorting it.
+const fn cover(view: Vec2, art: Vec2) -> Vec2 {
+    let by_width = view.x / art.x;
+    let by_height = view.y / art.y;
+    let scale = if by_width > by_height {
+        by_width
+    } else {
+        by_height
+    };
+
+    Vec2::new(art.x * scale, art.y * scale)
+}
 
 /// Behind the bridge and the player, so the deck reads as running *into* the
 /// rocket rather than stopping short of it.
@@ -70,11 +100,25 @@ pub struct LaunchpadEntity;
 pub fn spawn_launchpad(mut commands: Commands, assets: Res<AssetServer>) {
     let tiles = load_tiles(&assets);
 
+    spawn_sky(&mut commands, &assets);
     spawn_walls(&mut commands, &tiles, LaunchpadEntity);
     spawn_rocket(&mut commands, &assets);
     spawn_gantry(&mut commands, &tiles);
     spawn_player(&mut commands, &assets, PLAYER_START, LaunchpadEntity);
     spawn_launchpad_hud(&mut commands);
+}
+
+fn spawn_sky(commands: &mut Commands, assets: &AssetServer) {
+    commands.spawn((
+        LaunchpadEntity,
+        Sprite {
+            image: assets.load(SKY_SPRITE),
+            color: SKY_TINT,
+            custom_size: Some(SKY_SIZE),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, SKY_Z),
+    ));
 }
 
 fn spawn_rocket(commands: &mut Commands, assets: &AssetServer) {
@@ -195,5 +239,37 @@ pub fn leave_launchpad(
 pub fn despawn_launchpad(mut commands: Commands, entities: Query<Entity, With<LaunchpadEntity>>) {
     for entity in &entities {
         commands.entity(entity).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ROCKET_SPRITE, SKY_PIXELS, SKY_SIZE, SKY_SPRITE, cover};
+    use crate::tiles::assert_art_exists;
+    use bevy::prelude::*;
+
+    #[test]
+    fn the_pad_s_art_is_where_it_is_asked_for() {
+        assert_art_exists(SKY_SPRITE);
+        assert_art_exists(ROCKET_SPRITE);
+    }
+
+    /// Covering it by stretching would tilt the horizon and squash the clouds.
+    #[test]
+    fn the_sky_is_cropped_rather_than_distorted() {
+        let aspect = |size: Vec2| size.x / size.y;
+
+        assert!((aspect(SKY_SIZE) - aspect(SKY_PIXELS)).abs() < 1e-4);
+    }
+
+    /// Whichever axis is the tighter fit is the one met exactly; the other
+    /// overhangs and is cropped. Both directions, because a window can be either
+    /// wider or taller than the art it is being papered with.
+    #[test]
+    fn cover_meets_the_tighter_axis_and_overhangs_the_other() {
+        let art = Vec2::new(200.0, 100.0);
+
+        assert_eq!(cover(Vec2::new(400.0, 100.0), art), Vec2::new(400.0, 200.0));
+        assert_eq!(cover(Vec2::new(200.0, 200.0), art), Vec2::new(400.0, 200.0));
     }
 }

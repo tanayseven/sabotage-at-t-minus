@@ -80,12 +80,12 @@ const SWITCH_SETTINGS: &str = "\u{0}settings";
 /// The manual, in the order the procedures have to be worked. Ordered because
 /// the fixes depend on each other — the relay cannot be re-seated while the
 /// line behind it is still live — and the pages say so.
-const PAGES: [Page; 6] = [
+const PAGES: [Page; 5] = [
     Page {
         heading: "Read This First",
         lines: &[
             "The rocket leaves at T-00:00 whether or not it is airworthy.",
-            "Four systems were tampered with while the pad was clear.",
+            "Three systems were tampered with while the pad was clear.",
             "Each has a page, and each is in a room of its own — the crew",
             "route to the airlock walks every room, so none can be missed.",
             "",
@@ -120,20 +120,7 @@ const PAGES: [Page; 6] = [
         ],
     },
     Page {
-        heading: "2. Core Relay Bypass Notes",
-        lines: &[
-            "Fault: the core relay was filed down and will not hold.",
-            "It arcs in its own room, the same as the signal relay.",
-            "",
-            "There is no fixing it on the clock. Bypass it instead:",
-            "drive the line by hand until the charge carries itself.",
-            "",
-            "Tap SPACE, steadily, until the pulse count is made up.",
-            "Stopping short lets the charge bleed back out of it.",
-        ],
-    },
-    Page {
-        heading: "3. Coolant Regulator Notes",
+        heading: "2. Coolant Regulator Notes",
         lines: &[
             "Fault: the regulator was backed off and the line runs flat.",
             "Its gauge stands in a room of its own, as the relays do.",
@@ -175,11 +162,10 @@ const PAGES: [Page; 6] = [
     Page {
         heading: "Sign-Off",
         lines: &[
-            "The airlock stays locked until all four are signed off:",
+            "The airlock stays locked until all three are signed off:",
             "",
             "  Isolation panel set, all three lamps up.",
             "  Signal relay jointed, the crackle steady.",
-            "  Core relay bypassed, the charge carrying itself.",
             "  Coolant regulator sealed, the needle held in band.",
             "",
             "Then get clear. The clock does not wait for the paperwork.",

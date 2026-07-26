@@ -7,7 +7,6 @@ use crate::tiles::load_pixel_art;
 
 mod broken_wire;
 mod coolant_valve;
-mod tap_challenge;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 const WINDOW_FILL: Color = Color::srgb(1.0, 1.0, 1.0);
@@ -43,11 +42,10 @@ const GAUGE_TRACK_WIDTH: f32 = 432.0 / 512.0;
 
 /// How many kinds of challenge there are. What anything handing out one
 /// challenge per room counts against.
-pub const MINIGAME_COUNT: usize = 3;
+pub const MINIGAME_COUNT: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
-    TapChallenge,
     BrokenWire,
     CoolantValve,
 }
@@ -56,11 +54,8 @@ impl MinigameId {
     /// Every challenge in the game, in the order the manual documents them.
     /// A run installs one of each rather than picking from them, so this is the
     /// list the rooms are dealt out against.
-    pub const ALL: [MinigameId; MINIGAME_COUNT] = [
-        MinigameId::BrokenWire,
-        MinigameId::TapChallenge,
-        MinigameId::CoolantValve,
-    ];
+    pub const ALL: [MinigameId; MINIGAME_COUNT] =
+        [MinigameId::BrokenWire, MinigameId::CoolantValve];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -580,7 +575,6 @@ pub fn clear_active_minigame(mut commands: Commands) {
 
 fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
-        MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
         MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
         MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new()),
     }
