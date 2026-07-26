@@ -24,6 +24,7 @@ mod puzzles;
 mod quit;
 mod settings;
 mod setup;
+mod sign;
 mod splash;
 mod state;
 mod tiles;
@@ -38,11 +39,11 @@ use crate::camera::{apply_level_camera, follow_player, reset_camera, setup_camer
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PIXELS_PER_METER};
 use crate::countdown::{MissionTimer, tick_countdown};
 use crate::credits::{despawn_credits, spawn_credits};
-use crate::door::{leave_through_airlock, sync_airlock_lock_state, use_doors};
+use crate::door::{leave_through_airlock, leave_through_hatch, sync_locked_doors, use_doors};
 use crate::gameover::{despawn_game_over, game_over_action, spawn_game_over};
 use crate::ladder::climb_ladder;
 use crate::launchpad::{board_rocket, despawn_launchpad, leave_launchpad, spawn_launchpad};
-use crate::level::{Level, react_to_minigame_result, reset_level};
+use crate::level::{Level, RoomCodes, react_to_minigame_result, reset_level};
 use crate::manual::{
     ManualPage, despawn_manual, manual_controls, reset_manual_page, sync_manual_page,
 };
@@ -68,7 +69,7 @@ use crate::settings::Settings;
 use crate::setup::{despawn_game, setup};
 use crate::splash::{animate_splash, despawn_splash, skip_splash, spawn_splash};
 use crate::state::{GameState, PlayingState};
-use crate::ui::{button_visuals, sync_ui_scale};
+use crate::ui::{FONT_PATH, GameFont, button_visuals, sync_ui_scale};
 
 fn main() {
     let mut app = App::new();
@@ -91,6 +92,15 @@ fn main() {
 
     #[cfg(feature = "dev")]
     app.add_plugins(RapierDebugRenderPlugin::default());
+
+    // Kicked off here rather than in a startup system: the splash screen spawns
+    // text on the very first `OnEnter`, and it needs the handle to already exist.
+    let font = GameFont(app.world().resource::<AssetServer>().load(FONT_PATH));
+    app.insert_resource(font);
+
+    // Drawn once, here, rather than per run: the codes are what the manual's
+    // room index is printed from, and both have to be looking at the same six.
+    app.insert_resource(RoomCodes::random());
 
     app.init_state::<GameState>()
         .add_sub_state::<PlayingState>()
@@ -161,13 +171,13 @@ fn main() {
         // chained in that order rather than racing.
         .add_systems(
             Update,
-            (use_doors, leave_through_airlock)
+            (use_doors, leave_through_airlock, leave_through_hatch)
                 .chain()
                 .run_if(in_state(PlayingState::Running)),
         )
         .add_systems(
             Update,
-            sync_airlock_lock_state.run_if(in_state(PlayingState::Running)),
+            sync_locked_doors.run_if(in_state(PlayingState::Running)),
         )
         // `E` throws a switch as well as working a door, and the panel is
         // mounted where the two are never both in reach, so these can share the

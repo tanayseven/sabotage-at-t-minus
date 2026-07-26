@@ -1,36 +1,38 @@
 //! Which room of the rocket each of the run's puzzles is installed in.
 //!
-//! The rocket has six rooms and the game has three things to be worked: the
-//! isolation panel and one breach per kind of minigame. Every one of them is
-//! installed in a room of its own, picked fresh at the start of every run — a
-//! player who has run the rocket before still has to find each job rather than
-//! walking a route from memory, and no two jobs are ever stacked in the same
-//! room where one would be worked through the other.
+//! Every room of the rocket has a breach in it, so there is a job wherever the
+//! player goes and the airlock waits on all of them. What is dealt fresh at the
+//! start of every run is which challenge each breach opens, and which room the
+//! isolation panel is bolted in — a player who has run the rocket before still
+//! has to read the manual and work what is in front of them rather than walking
+//! a route from memory.
 //!
-//! The crossing passes through all six rooms, so dealing three of them out is
-//! enough to put every puzzle on the player's way to the airlock without any of
-//! them having to be hunted for.
+//! The breach and the panel are mounted on different stretches of a room's
+//! wall, so the room that draws both can be worked rather than blocked.
 
 use bevy::prelude::*;
 
 use crate::level::{ROOM_COUNT, Room};
 use crate::minigames::{MINIGAME_COUNT, MinigameId};
 
-/// One room for the panel and one for each challenge.
-pub const PUZZLE_COUNT: usize = 1 + MINIGAME_COUNT;
+/// Fewer rooms than kinds would leave a challenge with nowhere to be installed.
+const _: () = assert!(MINIGAME_COUNT <= ROOM_COUNT);
 
-/// There has to be a room for each of them, or the deal below would have to
-/// double one up — which is the one thing this module exists to prevent.
-const _: () = assert!(PUZZLE_COUNT <= ROOM_COUNT);
-
-/// The rooms this run's puzzles are in: the panel's, and one per challenge, all
-/// different. A resource rather than a component because the answer is decided
-/// before the level is built and outlives the geometry built from it.
+/// The rooms this run's puzzles are in: the panel's room, and which challenge
+/// each room's breach opens. A resource rather than a component because the
+/// answer is decided before the level is built and outlives the geometry built
+/// from it.
+///
+/// Every room gets a breach, so the deal is no longer about *which* rooms are
+/// worked — it is all of them — but about which challenge turns up where, and
+/// which room the panel is bolted in. The breach and the panel are mounted on
+/// different stretches of a room's wall, so the room that draws both is worked
+/// rather than blocked.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RocketPuzzles {
     pub panel_room: Room,
-    /// Room per entry of [`MinigameId::ALL`], in that order.
-    pub portal_rooms: [Room; MINIGAME_COUNT],
+    /// The challenge behind each room's breach, by room index.
+    pub room_minigames: [MinigameId; ROOM_COUNT],
 }
 
 impl Default for RocketPuzzles {
@@ -49,96 +51,117 @@ pub const fn scramble(seed: u64) -> u64 {
 }
 
 impl RocketPuzzles {
-    /// Deals the rooms for one run.
+    /// Deals one run: the panel's room, and a challenge for every room.
+    ///
+    /// The challenges are dealt round the rocket from a rolling start rather
+    /// than drawn one room at a time. There are more rooms than kinds of
+    /// challenge, so something has to repeat; going round in order is what
+    /// stops a run from stacking every breach of one kind at one end of the
+    /// rocket, and the rolling start is what stops two runs being the same.
     pub fn from_seed(seed: u64) -> Self {
-        let dealt = deal_rooms(seed);
+        let bits = scramble(seed);
+        let panel_room = Room::from_index((bits % ROOM_COUNT as u64) as usize);
+
+        let first = (scramble(bits) % MINIGAME_COUNT as u64) as usize;
+        let room_minigames =
+            std::array::from_fn(|room| MinigameId::ALL[(first + room) % MINIGAME_COUNT]);
 
         Self {
-            panel_room: dealt[0],
-            portal_rooms: std::array::from_fn(|index| dealt[1 + index]),
+            panel_room,
+            room_minigames,
         }
     }
 
     /// Where the run's breaches stand and which challenge each one opens: one
-    /// per room dealt above, in the order the manual documents them.
-    pub fn portal_placements(&self) -> [(Vec2, MinigameId); MINIGAME_COUNT] {
-        std::array::from_fn(|index| {
+    /// per room of the rocket.
+    pub fn portal_placements(&self) -> [(Vec2, MinigameId); ROOM_COUNT] {
+        std::array::from_fn(|room| {
             (
-                self.portal_rooms[index].portal_mount(),
-                MinigameId::ALL[index],
+                Room::from_index(room).portal_mount(),
+                self.room_minigames[room],
             )
         })
     }
-}
-
-/// [`PUZZLE_COUNT`] different rooms, drawn from the whole rocket without
-/// replacement — the draw is what says two puzzles never share a room.
-fn deal_rooms(seed: u64) -> [Room; PUZZLE_COUNT] {
-    let mut pool: [usize; ROOM_COUNT] = std::array::from_fn(|index| index);
-    let mut left = ROOM_COUNT;
-    let mut bits = scramble(seed);
-
-    std::array::from_fn(|_| {
-        bits = scramble(bits);
-        let picked = (bits % left as u64) as usize;
-        let room = pool[picked];
-
-        // The room just taken is replaced by the last one still in the pool, so
-        // the next draw is over what is left rather than over the whole rocket.
-        left -= 1;
-        pool[picked] = pool[left];
-
-        Room::from_index(room)
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The whole point of the deal: nothing is installed on top of anything
-    /// else. Two puzzles in one room would put a portal over the panel — and the
-    /// portal is walked into rather than worked, so the panel behind it could
-    /// not be reached without being pulled into a minigame first.
+    /// The point of the change: there is a job in every room, so a player who
+    /// walks into any room of the rocket has something to work there.
     #[test]
-    fn no_two_puzzles_share_a_room() {
-        for seed in 0..2_000u64 {
-            let puzzles = RocketPuzzles::from_seed(seed);
-            let mut rooms = vec![puzzles.panel_room];
-            rooms.extend(puzzles.portal_rooms);
+    fn every_room_has_a_breach() {
+        let puzzles = RocketPuzzles::from_seed(7);
+        let placements = puzzles.portal_placements();
 
-            for (index, room) in rooms.iter().enumerate() {
+        assert_eq!(placements.len(), ROOM_COUNT);
+
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+
+            assert!(
+                placements.iter().any(|(at, _)| *at == room.portal_mount()),
+                "{} has no breach in it",
+                room.label()
+            );
+        }
+    }
+
+    /// A run that never installed one of the challenges would be a run with a
+    /// page of the manual that never comes up.
+    #[test]
+    fn every_challenge_is_installed_somewhere() {
+        for seed in 0..500u64 {
+            let puzzles = RocketPuzzles::from_seed(seed);
+
+            for minigame in MinigameId::ALL {
                 assert!(
-                    !rooms[index + 1..].contains(room),
-                    "seed {seed} put two puzzles in {}",
-                    room.label()
+                    puzzles.room_minigames.contains(&minigame),
+                    "seed {seed} installs {minigame:?} nowhere"
                 );
             }
         }
     }
 
-    /// Every room has to be one each job can turn up in, or the rocket is
-    /// narrower than it looks and the same rooms are worked every run.
+    /// Dealing round the rocket rather than drawing each room on its own is
+    /// what spreads the kinds out: no two rooms in a row open the same
+    /// challenge while there is more than one kind to hand.
     #[test]
-    fn every_room_comes_up_for_every_puzzle() {
-        let mut seen = [[false; ROOM_COUNT]; PUZZLE_COUNT];
-
-        for seed in 0..2_000u64 {
+    fn neighbouring_rooms_open_different_challenges() {
+        for seed in 0..500u64 {
             let puzzles = RocketPuzzles::from_seed(seed);
-            let dealt = [puzzles.panel_room].into_iter().chain(puzzles.portal_rooms);
 
-            for (puzzle, room) in dealt.enumerate() {
-                let index = (0..ROOM_COUNT)
-                    .position(|index| Room::from_index(index) == room)
-                    .expect("dealt a room that is not in the rocket");
-                seen[puzzle][index] = true;
+            for pair in puzzles.room_minigames.windows(2) {
+                assert_ne!(
+                    pair[0], pair[1],
+                    "seed {seed} put the same challenge in two rooms running"
+                );
             }
         }
+    }
 
-        for (puzzle, rooms) in seen.iter().enumerate() {
+    /// The room that draws the panel as well as a breach is worked breach
+    /// first: walking to the panel takes the player into the breach, and a
+    /// cleared breach despawns and leaves the panel behind it. What that needs
+    /// is for the breach to be on the panel's stretch of wall rather than
+    /// somewhere a player could reach the panel without meeting it.
+    #[test]
+    fn the_breach_sharing_the_panel_s_room_is_met_on_the_way_to_it() {
+        use crate::config::PLAYER_HEIGHT;
+        use crate::portal::PORTAL_RADIUS;
+
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+            let breach = room.portal_mount();
+            // Where a player stood at the panel, ready to throw a switch, has
+            // their centre.
+            let working_the_panel = Vec2::new(room.fixture().x, room.floor() + PLAYER_HEIGHT / 2.0);
+
             assert!(
-                rooms.iter().all(|seen| *seen),
-                "puzzle {puzzle} is never installed in some room"
+                working_the_panel.distance(breach) < PORTAL_RADIUS,
+                "the panel in {} can be reached without meeting its breach",
+                room.label()
             );
         }
     }
@@ -146,30 +169,11 @@ mod tests {
     /// Two runs a moment apart must not be the same run: the seed is the app's
     /// uptime in nanoseconds.
     #[test]
-    fn seeds_a_moment_apart_deal_different_rooms() {
+    fn seeds_a_moment_apart_deal_different_runs() {
         let seed = 1_234_567_890_u64;
         let differ = (1..=8)
             .filter(|step| RocketPuzzles::from_seed(seed + step) != RocketPuzzles::from_seed(seed));
 
         assert!(differ.count() >= 6, "the deal barely moves between seeds");
-    }
-
-    /// The breaches stand in the rooms that were dealt, one per kind of
-    /// challenge, so a run works every puzzle the game has.
-    #[test]
-    fn one_portal_of_each_kind_stands_in_its_own_room() {
-        let puzzles = RocketPuzzles::from_seed(5);
-        let placements = puzzles.portal_placements();
-
-        for minigame in MinigameId::ALL {
-            assert!(
-                placements.iter().any(|(_, id)| *id == minigame),
-                "{minigame:?} is not installed anywhere in the rocket"
-            );
-        }
-
-        for (index, (at, _)) in placements.iter().enumerate() {
-            assert_eq!(*at, puzzles.portal_rooms[index].portal_mount());
-        }
     }
 }

@@ -20,7 +20,7 @@
 use bevy::prelude::*;
 
 use crate::config::{PLAYER_HEIGHT, PLAYER_WIDTH};
-use crate::level::{Level, LevelProgress, Room};
+use crate::level::{Level, LevelProgress, Room, RoomCodes};
 use crate::player::Player;
 use crate::puzzles::{RocketPuzzles, scramble};
 use crate::ui::MUTED_TEXT;
@@ -152,11 +152,15 @@ impl Panel {
     /// The panel says which room it is in and whether it has been set. The
     /// breaches only say how many are left: they are lit, they pulse, and the
     /// crossing goes through every room, so they are met rather than looked for.
-    fn status(&self, level: Level, progress: &LevelProgress) -> String {
+    fn status(&self, codes: &RoomCodes, level: Level, progress: &LevelProgress) -> String {
         let mut line = if level.rooms().contains(&self.room) {
             let state = if self.solved { "SET" } else { "UNSET" };
 
-            format!("Isolation panel · {} · {state}", self.room.label())
+            format!(
+                "Isolation panel · #{} · {} · {state}",
+                codes.of(self.room),
+                self.room.label()
+            )
         } else {
             String::new()
         };
@@ -415,6 +419,7 @@ pub fn light_panel(
 /// Spawned as part of the HUD, so it lives and dies with the rest of the run.
 pub fn spawn_panel_status(
     parent: &mut ChildSpawnerCommands,
+    codes: &RoomCodes,
     level: Level,
     panel: &Panel,
     progress: &LevelProgress,
@@ -422,7 +427,7 @@ pub fn spawn_panel_status(
 ) {
     parent.spawn((
         PanelStatus,
-        Text::new(panel.status(level, progress)),
+        Text::new(panel.status(codes, level, progress)),
         TextFont {
             font_size: FontSize::Px(font_size),
             ..default()
@@ -432,6 +437,7 @@ pub fn spawn_panel_status(
 }
 
 pub fn sync_panel_status(
+    codes: Res<RoomCodes>,
     level: Res<Level>,
     panel: Res<Panel>,
     progress: Res<LevelProgress>,
@@ -442,7 +448,7 @@ pub fn sync_panel_status(
     }
 
     for mut text in &mut labels {
-        **text = panel.status(*level, &progress);
+        **text = panel.status(&codes, *level, &progress);
     }
 }
 

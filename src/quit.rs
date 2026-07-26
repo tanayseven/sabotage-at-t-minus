@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::state::{GameState, PlayingState};
-use crate::ui::{ACCENT, MUTED_TEXT, spawn_button};
+use crate::ui::{ACCENT, GameFont, MUTED_TEXT, spawn_button};
 
 const SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
 const PANEL: Color = Color::srgb(0.12, 0.13, 0.17);
@@ -44,7 +44,7 @@ pub fn open_quit_dialog(
     }
 }
 
-pub fn spawn_quit_dialog(mut commands: Commands) {
+pub fn spawn_quit_dialog(mut commands: Commands, font: Res<GameFont>) {
     commands
         .spawn((
             QuitDialog,
@@ -76,10 +76,7 @@ pub fn spawn_quit_dialog(mut commands: Commands) {
                 .with_children(|panel| {
                     panel.spawn((
                         Text::new("Abort the mission?"),
-                        TextFont {
-                            font_size: FontSize::Px(40.0),
-                            ..default()
-                        },
+                        font.at(40.0),
                         TextColor(ACCENT),
                     ));
                     panel.spawn((

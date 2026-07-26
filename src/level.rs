@@ -6,11 +6,12 @@
 //! once a doorway onto the next level is now the end of the mission.
 
 use bevy::prelude::*;
+use rand::Rng;
 
 use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
 use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
-use crate::minigames::{CompletedMinigame, MINIGAME_COUNT, MinigameOutcome};
+use crate::minigames::{CompletedMinigame, MinigameOutcome};
 use crate::platform::Platform;
 use crate::portal::TriggeredPortal;
 use crate::state::PlayingState;
@@ -130,6 +131,9 @@ const UPPER_LADDER_X: f32 = -400.0;
 const LADDER_GAP: f32 = LADDER_CLEARANCE;
 /// The way back out, at the far end of the top deck. Working it ends the run.
 const AIRLOCK_X: f32 = HULL_RIGHT - WALL_THICKNESS / 2.0;
+/// The far side of the rocket from the airlock: the hatch the player boards
+/// through, and so the one they are stood next to when a run opens.
+const HATCH_X: f32 = HULL_LEFT + WALL_THICKNESS / 2.0;
 
 const fn plate(from: f32, to: f32, top: f32) -> Platform {
     Platform::with_top((from + to) / 2.0, top, to - from)
@@ -148,8 +152,9 @@ const DECK_0_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_0);
 const DECK_1_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_1);
 const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
 const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_2);
+const HATCH: Door = Door::hatch(HATCH_X, DECK_0);
 
-const ROCKET_DOORS: [Door; 4] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, AIRLOCK];
+const ROCKET_DOORS: [Door; 5] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, AIRLOCK, HATCH];
 
 const ROCKET_WALLS: [Wall; 5] = [
     Wall::between(HULL_LEFT, DECK_0, ROCKET_CEILING),
@@ -224,7 +229,7 @@ impl Side {
 
 /// How many decks the rocket has, and how many rooms the bulkhead cuts each of
 /// them into.
-const DECK_COUNT: usize = 3;
+pub const DECK_COUNT: usize = 3;
 const ROOMS_PER_DECK: usize = 2;
 /// Every room in the rocket, which is what anything picking one at random works
 /// against.
@@ -248,6 +253,90 @@ pub struct Room {
 /// so the middle of the room is the one place a fixture would be in the way of
 /// both. `a_panel_is_clear_of_everything_else_in_its_room` holds this.
 const FIXTURE_ALONG_ROOM: f32 = 0.45;
+
+/// How far along a room its code board is hung: back toward the bulkhead, so a
+/// player coming through the doorway reads it before they are past it, and well
+/// short of the panel and the breach further out.
+const SIGN_ALONG_ROOM: f32 = 0.2;
+/// Above the doorway rather than beside it, where nothing else is mounted and
+/// nothing loose can be shoved in front of it.
+const SIGN_HEIGHT: f32 = 168.0;
+
+/// How many characters a room code is. Four, so it reads as a plate marking
+/// rather than a name.
+const ROOM_CODE_LEN: usize = 4;
+const ROOM_CODE_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+/// The code stencilled by each room's hatch, in room order — what the manual's
+/// room index lists the rooms under, and so how a player turns the code the HUD
+/// gives them into somewhere to walk.
+///
+/// Drawn when the game starts rather than written down here, so the codes are
+/// not something a player can learn once and then stop opening the manual.
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct RoomCodes([String; ROOM_COUNT]);
+
+impl RoomCodes {
+    /// Distinct codes, because the whole use of a code is telling one room from
+    /// the other five.
+    pub fn random() -> Self {
+        let mut rng = rand::thread_rng();
+        let mut codes: Vec<String> = Vec::with_capacity(ROOM_COUNT);
+
+        while codes.len() < ROOM_COUNT {
+            let code: String = (0..ROOM_CODE_LEN)
+                .map(|_| {
+                    let pick = rng.gen_range(0..ROOM_CODE_ALPHABET.len());
+                    ROOM_CODE_ALPHABET[pick] as char
+                })
+                .collect();
+
+            // A draw that came out all letters or all digits reads as a word or
+            // a number rather than a marking, so it goes back in the hat.
+            let mixed = code
+                .chars()
+                .any(|character| character.is_ascii_alphabetic())
+                && code.chars().any(|character| character.is_ascii_digit());
+
+            if mixed && !codes.contains(&code) {
+                codes.push(code);
+            }
+        }
+
+        Self(
+            codes
+                .try_into()
+                .expect("the loop above fills exactly ROOM_COUNT codes"),
+        )
+    }
+
+    /// The code stencilled by this room's hatch, without its `#`.
+    pub fn of(&self, room: Room) -> &str {
+        &self.0[room.index()]
+    }
+}
+
+/// One deck's worth of the manual's room index: both its rooms, code first.
+/// Built from the same room list the level is, so the codes in the manual
+/// cannot drift from the codes on the rooms.
+pub fn deck_index_line(codes: &RoomCodes, deck: usize) -> String {
+    let port = Room {
+        deck,
+        side: Side::Port,
+    };
+    let starboard = Room {
+        deck,
+        side: Side::Starboard,
+    };
+
+    format!(
+        "  #{}  {:<20}#{}  {}",
+        codes.of(port),
+        port.label(),
+        codes.of(starboard),
+        starboard.label()
+    )
+}
 
 /// How high above the floor of its room a breach hangs.
 ///
@@ -285,13 +374,37 @@ impl Room {
         )
     }
 
-    /// The centre of a breach opened in this room. Over the same clear stretch
-    /// of wall the panel is bolted to, which is safe because no two puzzles are
-    /// ever dealt the same room — see [`crate::puzzles::RocketPuzzles`].
+    /// The centre of a breach opened in this room, over the same clear stretch
+    /// of wall the panel is bolted to.
+    ///
+    /// Every room has a breach now, so one room has both — and they are drawn
+    /// on top of each other rather than side by side. That is deliberate: the
+    /// stretch of a room a player actually walks is short, hemmed in by the
+    /// doorway at one end and the ladder at the other, and a breach moved off
+    /// it to make space is a breach that can be strolled past. A cleared breach
+    /// despawns, so the room that draws both is worked breach first and panel
+    /// second, which is the order the lit switches want anyway.
     pub const fn portal_mount(self) -> Vec2 {
         let at = self.fixture();
 
         Vec2::new(at.x, at.y + PORTAL_MOUNT_HEIGHT)
+    }
+
+    /// Where this room's code board hangs.
+    pub const fn sign(self) -> Vec2 {
+        Vec2::new(
+            BULKHEAD_X + (self.side.hull() - BULKHEAD_X) * SIGN_ALONG_ROOM,
+            self.floor() + SIGN_HEIGHT,
+        )
+    }
+
+    /// The inverse of [`Room::from_index`] — which room of the rocket this is.
+    pub const fn index(self) -> usize {
+        self.deck * ROOMS_PER_DECK
+            + match self.side {
+                Side::Port => 0,
+                Side::Starboard => 1,
+            }
     }
 
     /// How the room is named in anything the player reads.
@@ -310,6 +423,14 @@ const ROCKET_ROOMS: [Room; ROOM_COUNT] = [
 ];
 
 impl Level {
+    /// How the level is named to the player, in the same terms the launch pad
+    /// names itself: where you are, not what number it is.
+    pub fn title(self) -> &'static str {
+        match self {
+            Level::Rocket => "Inside Rocket",
+        }
+    }
+
     pub fn config(self) -> LevelConfig {
         match self {
             Level::Rocket => ROCKET_CONFIG,
@@ -350,9 +471,11 @@ impl Level {
     /// How many breaches this level puts up, which is what the objective counts
     /// down: one per kind of challenge, one room each, however the rooms happen
     /// to be dealt.
+    /// One breach per room, so there is something to work wherever the player
+    /// goes and the airlock waits on all of them.
     pub fn portal_count(self) -> usize {
         match self {
-            Level::Rocket => MINIGAME_COUNT,
+            Level::Rocket => self.rooms().len(),
         }
     }
 
@@ -414,10 +537,71 @@ mod tests {
     use bevy::prelude::*;
 
     use super::{
-        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, Door, LADDER_GAP, LOWER_LADDER_X,
-        Level, LevelProgress, ROOM_COUNT, Room, UPPER_LADDER_X,
+        AIRLOCK, BULKHEAD_X, CameraMode, DECK_0, DECK_1, DECK_2, DECK_COUNT, DECK_HEIGHT, Door,
+        HATCH, HULL_RIGHT, LADDER_GAP, LOWER_LADDER_X, Level, LevelProgress, ROOM_CODE_LEN,
+        ROOM_COUNT, Room, RoomCodes, UPPER_LADDER_X,
     };
     use crate::config::PLAYER_HEIGHT;
+
+    /// The codes are the only thing telling one room from another in the HUD,
+    /// and the manual is only worth opening if they read as markings.
+    #[test]
+    fn room_codes_are_distinct_markings() {
+        for _ in 0..32 {
+            let codes = RoomCodes::random();
+            let drawn: Vec<&str> = (0..ROOM_COUNT)
+                .map(|index| codes.of(Room::from_index(index)))
+                .collect();
+
+            for (index, code) in drawn.iter().enumerate() {
+                assert_eq!(
+                    code.chars().count(),
+                    ROOM_CODE_LEN,
+                    "{code:?} is the wrong length"
+                );
+                assert!(
+                    code.chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
+                    "{code:?} is not alphanumeric"
+                );
+                assert!(
+                    code.chars().any(|c| c.is_ascii_alphabetic())
+                        && code.chars().any(|c| c.is_ascii_digit()),
+                    "{code:?} reads as a word or a number rather than a marking"
+                );
+                assert!(
+                    !drawn[index + 1..].contains(code),
+                    "two rooms were stencilled {code:?}"
+                );
+            }
+        }
+    }
+
+    /// The board has to be inside its own room, clear of the panel and the
+    /// breach mounted further out.
+    #[test]
+    fn every_room_signs_itself_inside_its_own_walls() {
+        for index in 0..ROOM_COUNT {
+            let room = Room::from_index(index);
+            let board = room.sign();
+
+            assert!(
+                board.x.abs() > BULKHEAD_X.abs() && board.x.abs() < HULL_RIGHT,
+                "the board in {} is outside the hull",
+                room.label()
+            );
+            assert!(
+                board.y > room.floor() && board.y < room.floor() + DECK_HEIGHT,
+                "the board in {} is not on its own deck",
+                room.label()
+            );
+            assert!(
+                (board.x - room.fixture().x).abs() > 40.0,
+                "the board in {} is hung on top of the panel",
+                room.label()
+            );
+        }
+    }
 
     #[test]
     fn a_run_opens_inside_the_rocket() {
@@ -431,8 +615,11 @@ mod tests {
     fn the_rocket_is_the_whole_run() {
         assert!(!Level::Rocket.walls().is_empty());
         assert!(!Level::Rocket.ladders().is_empty());
-        assert_eq!(Level::Rocket.doors().len(), 4);
+        // A bulkhead door per deck, the airlock out, and the hatch back to the
+        // pad the run boarded from.
+        assert_eq!(Level::Rocket.doors().len(), DECK_COUNT + 2);
         assert_eq!(AIRLOCK.kind, crate::door::DoorKind::Airlock);
+        assert_eq!(HATCH.kind, crate::door::DoorKind::Hatch);
     }
 
     /// The exit is on the far side of the top deck, past the last bulkhead —
@@ -455,13 +642,13 @@ mod tests {
         );
     }
 
-    /// The rocket puts up one breach per kind of challenge, so a run works
-    /// every puzzle the game has before it ever reaches the pad.
+    /// A breach in every room, so wherever the player goes there is something
+    /// to work — and the airlock, which waits on all of them, cannot be reached
+    /// by walking round the jobs.
     #[test]
-    fn the_rocket_carries_one_of_every_challenge() {
-        use crate::minigames::MINIGAME_COUNT;
-
-        assert_eq!(Level::Rocket.portal_count(), MINIGAME_COUNT);
+    fn the_rocket_carries_a_breach_in_every_room() {
+        assert_eq!(Level::Rocket.portal_count(), ROOM_COUNT);
+        assert_eq!(Level::Rocket.rooms().len(), ROOM_COUNT);
     }
 
     /// A breach is walked into rather than worked, so one hung out of the
@@ -538,7 +725,7 @@ mod tests {
     mod crossing {
         use super::*;
         use crate::config::PIXELS_PER_METER;
-        use crate::door::{leave_through_airlock, sync_airlock_lock_state, use_doors};
+        use crate::door::{leave_through_airlock, sync_locked_doors, use_doors};
         use crate::ladder::climb_ladder;
         use crate::panel::Panel;
         use crate::physics::configure_physics;
@@ -596,17 +783,20 @@ mod tests {
                 app.init_resource::<Panel>();
                 app.init_resource::<RocketPuzzles>();
                 app.insert_resource(LevelProgress::new(Level::Rocket));
+                app.insert_resource(RoomCodes::random());
                 app.add_systems(
                     Startup,
                     |mut commands: Commands,
                      assets: Res<AssetServer>,
                      panel: Res<Panel>,
                      puzzles: Res<RocketPuzzles>,
+                     codes: Res<RoomCodes>,
                      progress: Res<LevelProgress>| {
                         build_level(
                             &mut commands,
                             &assets,
                             Level::Rocket,
+                            &codes,
                             RunState {
                                 puzzles: *puzzles,
                                 panel: *panel,
@@ -618,7 +808,7 @@ mod tests {
                 app.add_systems(
                     Update,
                     (
-                        sync_airlock_lock_state,
+                        sync_locked_doors,
                         move_player,
                         probe_ground,
                         climb_ladder,

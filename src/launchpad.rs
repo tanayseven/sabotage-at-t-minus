@@ -11,7 +11,7 @@ use crate::platform::Platform;
 use crate::player::{Player, spawn_player};
 use crate::state::GameState;
 use crate::tiles::{Axis, TileRun, TileSet, load_tiles};
-use crate::ui::ACCENT;
+use crate::ui::{ACCENT, GameFont};
 use crate::wall::spawn_walls;
 
 const ROCKET_SPRITE: &str = "rocket.png";
@@ -83,7 +83,7 @@ const HATCH_REACH: f32 = PLAYER_HEIGHT;
 #[derive(Component, Clone)]
 pub struct LaunchpadEntity;
 
-pub fn spawn_launchpad(mut commands: Commands, assets: Res<AssetServer>) {
+pub fn spawn_launchpad(mut commands: Commands, assets: Res<AssetServer>, font: Res<GameFont>) {
     let tiles = load_tiles(&assets);
 
     spawn_sky(&mut commands, &assets);
@@ -91,7 +91,7 @@ pub fn spawn_launchpad(mut commands: Commands, assets: Res<AssetServer>) {
     spawn_rocket(&mut commands, &assets);
     spawn_gantry(&mut commands, &tiles);
     spawn_player(&mut commands, &assets, PLAYER_START, LaunchpadEntity);
-    spawn_launchpad_hud(&mut commands);
+    spawn_launchpad_hud(&mut commands, &font);
 }
 
 fn spawn_sky(commands: &mut Commands, assets: &AssetServer) {
@@ -155,7 +155,7 @@ fn spawn_gantry(commands: &mut Commands, tiles: &TileSet) {
     }
 }
 
-fn spawn_launchpad_hud(commands: &mut Commands) {
+fn spawn_launchpad_hud(commands: &mut Commands, font: &GameFont) {
     commands
         .spawn((
             LaunchpadEntity,
@@ -171,14 +171,7 @@ fn spawn_launchpad_hud(commands: &mut Commands) {
             },
         ))
         .with_children(|parent| {
-            parent.spawn((
-                Text::new("Launch Pad"),
-                TextFont {
-                    font_size: FontSize::Px(44.0),
-                    ..default()
-                },
-                TextColor(ACCENT),
-            ));
+            parent.spawn((Text::new("Launch Pad"), font.at(44.0), TextColor(ACCENT)));
             parent.spawn((
                 Text::new("A/D to move, W / space to jump - board the rocket to begin"),
                 TextFont {
