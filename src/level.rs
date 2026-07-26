@@ -158,13 +158,7 @@ const DECK_2_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_2);
 const DECK_3_DOOR: Door = Door::bulkhead(BULKHEAD_X, DECK_3);
 const AIRLOCK: Door = Door::airlock(AIRLOCK_X, DECK_0);
 
-const ROCKET_DOORS: [Door; 5] = [
-    DECK_0_DOOR,
-    DECK_1_DOOR,
-    DECK_2_DOOR,
-    DECK_3_DOOR,
-    AIRLOCK,
-];
+const ROCKET_DOORS: [Door; 5] = [DECK_0_DOOR, DECK_1_DOOR, DECK_2_DOOR, DECK_3_DOOR, AIRLOCK];
 
 const ROCKET_WALLS: [Wall; 6] = [
     Wall::between(HULL_LEFT, DECK_0, ROCKET_CEILING),
