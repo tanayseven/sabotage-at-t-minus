@@ -4,9 +4,10 @@ use bevy::prelude::*;
 use crate::settings::Settings;
 use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
-use crate::ui::GameFont;
+use crate::ui::{ACCENT, GameFont};
 
 mod broken_wire;
+mod clean_engine;
 mod coolant_valve;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -41,22 +42,45 @@ const GAUGE_NEEDLE_WIDTH: f32 = 16.0;
 const GAUGE_TRACK_LEFT: f32 = 40.0 / 512.0;
 const GAUGE_TRACK_WIDTH: f32 = 432.0 / 512.0;
 
+const BORE_CLEAN_PATH: &str = "clean-engine/bore-clean.png";
+const BORE_DIRTY_PATH: &str = "clean-engine/bore-dirty.png";
+
+/// The bore's grid, which is *painted into both plates* — the art is drawn as
+/// this many cells each way, so the challenge counts against these rather than
+/// keeping a second set of its own that could drift out of step with the
+/// pictures.
+pub(crate) const BORE_ROWS: usize = 5;
+pub(crate) const BORE_CELLS: u32 = 5;
+
+/// A cell on screen. Both plates are drawn 16px to the cell, so this is a clean
+/// 2× of the source — nearest-neighbour scaling by a whole number is what keeps
+/// the pixels square instead of smearing some of them wider than others.
+const BORE_CELL: f32 = 32.0;
+const BORE_CANVAS: f32 = BORE_CELL * BORE_ROWS as f32;
+
+/// How thick a line is drawn round the course the brush is standing on.
+const BORE_BRUSH_BORDER: f32 = 3.0;
+
 /// How many kinds of challenge there are. What anything handing out one
 /// challenge per room counts against.
-pub const MINIGAME_COUNT: usize = 2;
+pub const MINIGAME_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     BrokenWire,
     CoolantValve,
+    CleanEngine,
 }
 
 impl MinigameId {
     /// Every challenge in the game, in the order the manual documents them.
     /// A run installs one of each rather than picking from them, so this is the
     /// list the rooms are dealt out against.
-    pub const ALL: [MinigameId; MINIGAME_COUNT] =
-        [MinigameId::BrokenWire, MinigameId::CoolantValve];
+    pub const ALL: [MinigameId; MINIGAME_COUNT] = [
+        MinigameId::BrokenWire,
+        MinigameId::CoolantValve,
+        MinigameId::CleanEngine,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,11 +105,20 @@ pub struct CoolantGaugeVisualState {
     pub sealed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EngineBoreVisualState {
+    /// Cells cut clean in each course, counted from the left.
+    pub cut: [u32; BORE_ROWS],
+    /// The course the brush is standing on.
+    pub row: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum MinigameVisualState {
     Text(String),
     BrokenWires(SequenceWireVisualState),
     CoolantGauge(CoolantGaugeVisualState),
+    EngineBore(EngineBoreVisualState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +194,18 @@ pub(crate) struct CoolantGaugeSealedFace;
 
 #[derive(Component)]
 pub(crate) struct CoolantGaugeNeedle;
+
+/// The moving parts of the bore. One component with a variant rather than a
+/// marker apiece: every `&mut Node` query has to take a slot in the set below,
+/// and the set has room for eight.
+#[derive(Component)]
+pub(crate) enum EngineBoreVisual {
+    /// Clips the clean plate to how far along this course has been cut, so the
+    /// dirty plate underneath shows through for the cells still fouled.
+    Cut(usize),
+    /// The line drawn round the course under the brush.
+    Brush,
+}
 
 /// The needle's left edge for a place along the track, in canvas pixels. The
 /// stem is centred on the reading rather than butted up against it.
@@ -369,6 +414,90 @@ pub fn spawn_minigame_window(
                             });
                     }
 
+                    if id == MinigameId::CleanEngine {
+                        let dirty = load_pixel_art(&assets, BORE_DIRTY_PATH);
+                        let clean = load_pixel_art(&assets, BORE_CLEAN_PATH);
+
+                        window
+                            .spawn(Node {
+                                width: px(BORE_CANVAS),
+                                height: px(BORE_CANVAS),
+                                position_type: PositionType::Relative,
+                                ..default()
+                            })
+                            .with_children(|canvas| {
+                                // The fouled bore, laid down whole and never
+                                // touched again. Everything above it is the
+                                // clean plate being uncovered a cell at a time,
+                                // so soot is what shows wherever nothing has
+                                // been cut yet.
+                                canvas.spawn((
+                                    ImageNode {
+                                        image: dirty,
+                                        ..default()
+                                    },
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        width: px(BORE_CANVAS),
+                                        height: px(BORE_CANVAS),
+                                        ..default()
+                                    },
+                                ));
+
+                                // One clipping window per course, opened from
+                                // the left as the course is cut. Each holds a
+                                // full copy of the clean plate pushed up so the
+                                // course's own band of it lands in the window —
+                                // the same trick the wires use to show a slice
+                                // of one picture.
+                                for row in 0..BORE_ROWS {
+                                    canvas
+                                        .spawn((
+                                            EngineBoreVisual::Cut(row),
+                                            Node {
+                                                position_type: PositionType::Absolute,
+                                                left: px(0.0),
+                                                top: px(row as f32 * BORE_CELL),
+                                                width: px(0.0),
+                                                height: px(BORE_CELL),
+                                                overflow: Overflow::clip(),
+                                                ..default()
+                                            },
+                                        ))
+                                        .with_children(|cut| {
+                                            cut.spawn((
+                                                ImageNode {
+                                                    image: clean.clone(),
+                                                    ..default()
+                                                },
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: px(0.0),
+                                                    top: px(-(row as f32) * BORE_CELL),
+                                                    width: px(BORE_CANVAS),
+                                                    height: px(BORE_CANVAS),
+                                                    ..default()
+                                                },
+                                            ));
+                                        });
+                                }
+
+                                canvas.spawn((
+                                    EngineBoreVisual::Brush,
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(0.0),
+                                        top: px(0.0),
+                                        width: px(BORE_CANVAS),
+                                        height: px(BORE_CELL),
+                                        border: UiRect::all(px(BORE_BRUSH_BORDER)),
+                                        ..default()
+                                    },
+                                    BorderColor::all(ACCENT),
+                                ));
+                            });
+                    }
+
                     if id == MinigameId::CoolantValve {
                         let face = load_pixel_art(&assets, GAUGE_PATH);
                         let sealed = load_pixel_art(&assets, GAUGE_SEALED_PATH);
@@ -447,6 +576,7 @@ pub fn run_active_minigame(
         Query<&mut Node, With<CoolantGaugeFace>>,
         Query<&mut Node, With<CoolantGaugeSealedFace>>,
         Query<&mut Node, With<CoolantGaugeNeedle>>,
+        Query<(&EngineBoreVisual, &mut Node)>,
     )>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
@@ -554,6 +684,26 @@ pub fn run_active_minigame(
                 needle.left = px(needle_left(visual.fill));
             }
         }
+        MinigameVisualState::EngineBore(visual) => {
+            let status = active.game.status();
+            for mut text in &mut status_labels {
+                **text = status.clone();
+            }
+
+            for (part, mut node) in &mut visual_nodes.p7() {
+                match part {
+                    // Widening the window is the whole animation: the clean
+                    // plate is already sitting behind it, waiting to be let out.
+                    EngineBoreVisual::Cut(row) => {
+                        let cut = visual.cut[*row].min(BORE_CELLS) as f32;
+                        node.width = px(cut * BORE_CELL);
+                    }
+                    EngineBoreVisual::Brush => {
+                        node.top = px(visual.row as f32 * BORE_CELL);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -576,6 +726,9 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
         MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new()),
+        // No art of its own yet: the default `visual_state` prints `status`
+        // into the window's text, which is the whole of its display.
+        MinigameId::CleanEngine => Box::new(clean_engine::CleanEngine::new()),
     }
 }
 
@@ -583,7 +736,7 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
 mod tests {
     use super::*;
 
-    const CHALLENGE_ASSETS: [&str; 8] = [
+    const CHALLENGE_ASSETS: [&str; 10] = [
         WIRES_BROKEN_PATH,
         WIRES_JOINT_PATH,
         WIRES_ZAP_PATH,
@@ -592,6 +745,8 @@ mod tests {
         GAUGE_NEEDLE_PATH,
         GAUGE_HISS_PATH,
         GAUGE_SEALED_TING_PATH,
+        BORE_CLEAN_PATH,
+        BORE_DIRTY_PATH,
     ];
 
     /// A renamed asset does not break the build — it just loads nothing, in a
