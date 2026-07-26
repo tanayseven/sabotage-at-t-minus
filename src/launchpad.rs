@@ -6,9 +6,7 @@
 
 use bevy::prelude::*;
 
-use crate::config::{
-    DESIGN_HEIGHT, PLATFORM_HEIGHT, PLAYER_HEIGHT, VIEW_HEIGHT, VIEW_WIDTH, WALL_THICKNESS,
-};
+use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PLATFORM_HEIGHT, PLAYER_HEIGHT, WALL_THICKNESS};
 use crate::platform::Platform;
 use crate::player::{Player, spawn_player};
 use crate::state::GameState;
@@ -29,33 +27,16 @@ const ROCKET_HEIGHT: f32 = 520.0;
 const ROCKET_WIDTH: f32 = ROCKET_HEIGHT * ROCKET_PIXELS.x / ROCKET_PIXELS.y;
 const ROCKET_X: f32 = 400.0;
 
-/// The country the pad stands in, behind everything on the screen.
+/// The country the pad stands in, behind everything on the screen. Drawn at the
+/// size of the screen itself, in its own colours — it is the backdrop, so
+/// nothing is done to it beyond the scaling.
 const SKY_SPRITE: &str = "rocket-background.png";
 const SKY_PIXELS: Vec2 = Vec2::new(1920.0, 1080.0);
-/// Cropped rather than squashed: the shorter side is what gets trimmed, so the
-/// horizon stays level whatever shape the window is.
-const SKY_SIZE: Vec2 = cover(Vec2::new(VIEW_WIDTH, VIEW_HEIGHT), SKY_PIXELS);
-/// The sky is the only thing behind the pad, so a gap at either edge would show
-/// the void through it.
-const _: () = assert!(SKY_SIZE.x >= VIEW_WIDTH && SKY_SIZE.y >= VIEW_HEIGHT);
+const SKY_SIZE: Vec2 = Vec2::new(DESIGN_WIDTH, DESIGN_HEIGHT);
+/// The art and the screen are both 16:9, so the fit above is exact. Cross
+/// multiplied rather than divided so the two ratios compare without rounding.
+const _: () = assert!(SKY_PIXELS.x * SKY_SIZE.y == SKY_SIZE.x * SKY_PIXELS.y);
 const SKY_Z: f32 = -9.0;
-/// Dusk rather than noon. The pad is the way into a rocket lit by dim plating,
-/// and a full-brightness sky both fights that and washes out the hint text the
-/// pad prints across the top of it.
-const SKY_TINT: Color = Color::srgb(0.5, 0.54, 0.62);
-
-/// The size to draw `art` at to cover `view` whole without distorting it.
-const fn cover(view: Vec2, art: Vec2) -> Vec2 {
-    let by_width = view.x / art.x;
-    let by_height = view.y / art.y;
-    let scale = if by_width > by_height {
-        by_width
-    } else {
-        by_height
-    };
-
-    Vec2::new(art.x * scale, art.y * scale)
-}
 
 /// Behind the bridge and the player, so the deck reads as running *into* the
 /// rocket rather than stopping short of it.
@@ -113,7 +94,6 @@ fn spawn_sky(commands: &mut Commands, assets: &AssetServer) {
         LaunchpadEntity,
         Sprite {
             image: assets.load(SKY_SPRITE),
-            color: SKY_TINT,
             custom_size: Some(SKY_SIZE),
             ..default()
         },
@@ -244,32 +224,12 @@ pub fn despawn_launchpad(mut commands: Commands, entities: Query<Entity, With<La
 
 #[cfg(test)]
 mod tests {
-    use super::{ROCKET_SPRITE, SKY_PIXELS, SKY_SIZE, SKY_SPRITE, cover};
+    use super::{ROCKET_SPRITE, SKY_SPRITE};
     use crate::tiles::assert_art_exists;
-    use bevy::prelude::*;
 
     #[test]
     fn the_pad_s_art_is_where_it_is_asked_for() {
         assert_art_exists(SKY_SPRITE);
         assert_art_exists(ROCKET_SPRITE);
-    }
-
-    /// Covering it by stretching would tilt the horizon and squash the clouds.
-    #[test]
-    fn the_sky_is_cropped_rather_than_distorted() {
-        let aspect = |size: Vec2| size.x / size.y;
-
-        assert!((aspect(SKY_SIZE) - aspect(SKY_PIXELS)).abs() < 1e-4);
-    }
-
-    /// Whichever axis is the tighter fit is the one met exactly; the other
-    /// overhangs and is cropped. Both directions, because a window can be either
-    /// wider or taller than the art it is being papered with.
-    #[test]
-    fn cover_meets_the_tighter_axis_and_overhangs_the_other() {
-        let art = Vec2::new(200.0, 100.0);
-
-        assert_eq!(cover(Vec2::new(400.0, 100.0), art), Vec2::new(400.0, 200.0));
-        assert_eq!(cover(Vec2::new(200.0, 200.0), art), Vec2::new(400.0, 200.0));
     }
 }
