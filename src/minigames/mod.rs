@@ -6,6 +6,7 @@ use crate::state::PlayingState;
 use crate::tiles::load_pixel_art;
 
 mod broken_wire;
+mod coolant_valve;
 mod tap_challenge;
 
 const OVERLAY_SCRIM: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
@@ -24,22 +25,42 @@ const WIRES_RIGHT_WIDTH: f32 = WIRES_IMAGE_WIDTH - WIRES_RIGHT_START;
 const WIRES_CANVAS_WIDTH: f32 = 336.0;
 const WIRES_CANVAS_HEIGHT: f32 = 170.0;
 
+const GAUGE_PATH: &str = "coolant-minigame/gauge.png";
+const GAUGE_SEALED_PATH: &str = "coolant-minigame/gauge-sealed.png";
+const GAUGE_NEEDLE_PATH: &str = "coolant-minigame/needle.png";
+const GAUGE_HISS_PATH: &str = "coolant-minigame/hiss.ogg";
+const GAUGE_SEALED_TING_PATH: &str = "coolant-minigame/success-ting.ogg";
+const GAUGE_CANVAS_WIDTH: f32 = 336.0;
+const GAUGE_CANVAS_HEIGHT: f32 = 170.0;
+const GAUGE_WIDTH: f32 = GAUGE_CANVAS_WIDTH;
+const GAUGE_HEIGHT: f32 = GAUGE_WIDTH * 0.25;
+const GAUGE_NEEDLE_WIDTH: f32 = 16.0;
+
+/// The track's inset and width in the gauge art: 432px inset 40px into a 512px
+/// image. The needle is placed against these.
+const GAUGE_TRACK_LEFT: f32 = 40.0 / 512.0;
+const GAUGE_TRACK_WIDTH: f32 = 432.0 / 512.0;
+
 /// How many kinds of challenge there are. What anything handing out one
 /// challenge per room counts against.
-pub const MINIGAME_COUNT: usize = 2;
+pub const MINIGAME_COUNT: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameId {
     TapChallenge,
     BrokenWire,
+    CoolantValve,
 }
 
 impl MinigameId {
     /// Every challenge in the game, in the order the manual documents them.
     /// A run installs one of each rather than picking from them, so this is the
     /// list the rooms are dealt out against.
-    pub const ALL: [MinigameId; MINIGAME_COUNT] =
-        [MinigameId::BrokenWire, MinigameId::TapChallenge];
+    pub const ALL: [MinigameId; MINIGAME_COUNT] = [
+        MinigameId::BrokenWire,
+        MinigameId::TapChallenge,
+        MinigameId::CoolantValve,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,15 +78,25 @@ pub struct SequenceWireVisualState {
     pub jointed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CoolantGaugeVisualState {
+    /// Where the needle stands: 0 at the empty end of the track, 1 at the stop.
+    pub fill: f32,
+    pub sealed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum MinigameVisualState {
     Text(String),
     BrokenWires(SequenceWireVisualState),
+    CoolantGauge(CoolantGaugeVisualState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinigameAudioCue {
     SequenceZap,
+    CoolantVent,
+    CoolantSealed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -125,6 +156,22 @@ pub(crate) struct SequenceWireRight;
 
 #[derive(Component)]
 pub(crate) struct SequenceWireJoint;
+
+#[derive(Component)]
+pub(crate) struct CoolantGaugeFace;
+
+#[derive(Component)]
+pub(crate) struct CoolantGaugeSealedFace;
+
+#[derive(Component)]
+pub(crate) struct CoolantGaugeNeedle;
+
+/// The needle's left edge for a place along the track, in canvas pixels. The
+/// stem is centred on the reading rather than butted up against it.
+fn needle_left(fill: f32) -> f32 {
+    (GAUGE_TRACK_LEFT + fill.clamp(0.0, 1.0) * GAUGE_TRACK_WIDTH) * GAUGE_WIDTH
+        - GAUGE_NEEDLE_WIDTH * 0.5
+}
 
 pub fn queue_minigame(commands: &mut Commands, config: MinigameConfig) {
     commands.insert_resource(PendingMinigame(config));
@@ -327,6 +374,61 @@ pub fn spawn_minigame_window(
                                 ));
                             });
                     }
+
+                    if id == MinigameId::CoolantValve {
+                        let face = load_pixel_art(&assets, GAUGE_PATH);
+                        let sealed = load_pixel_art(&assets, GAUGE_SEALED_PATH);
+                        let needle = load_pixel_art(&assets, GAUGE_NEEDLE_PATH);
+                        let gauge_top = (GAUGE_CANVAS_HEIGHT - GAUGE_HEIGHT) * 0.5;
+
+                        window
+                            .spawn(Node {
+                                width: px(GAUGE_CANVAS_WIDTH),
+                                height: px(GAUGE_CANVAS_HEIGHT),
+                                position_type: PositionType::Relative,
+                                ..default()
+                            })
+                            .with_children(|canvas| {
+                                // Stacked and swapped rather than re-imaged, so
+                                // sealing never waits on an asset load.
+                                for (marker_sealed, image, shown) in
+                                    [(false, face, true), (true, sealed, false)]
+                                {
+                                    let node = Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(0.0),
+                                        top: px(gauge_top),
+                                        width: px(GAUGE_WIDTH),
+                                        height: px(GAUGE_HEIGHT),
+                                        display: if shown { Display::Flex } else { Display::None },
+                                        ..default()
+                                    };
+                                    let visual = (ImageNode { image, ..default() }, node);
+
+                                    if marker_sealed {
+                                        canvas.spawn((CoolantGaugeSealedFace, visual));
+                                    } else {
+                                        canvas.spawn((CoolantGaugeFace, visual));
+                                    }
+                                }
+
+                                canvas.spawn((
+                                    CoolantGaugeNeedle,
+                                    ImageNode {
+                                        image: needle,
+                                        ..default()
+                                    },
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: px(needle_left(0.0)),
+                                        top: px(gauge_top),
+                                        width: px(GAUGE_NEEDLE_WIDTH),
+                                        height: px(GAUGE_HEIGHT),
+                                        ..default()
+                                    },
+                                ));
+                            });
+                    }
                 });
         });
 }
@@ -341,11 +443,16 @@ pub fn run_active_minigame(
     mut commands: Commands,
     active: Option<ResMut<ActiveMinigame>>,
     mut status_labels: Query<&mut Text, With<MinigameStatus>>,
-    mut wire_nodes: ParamSet<(
+    // All `&mut Node` queries told apart only by their markers, which Bevy will
+    // not take as disjoint — so they share a set rather than conflicting.
+    mut visual_nodes: ParamSet<(
         Query<&mut Node, With<SequenceWireLeft>>,
         Query<&mut Node, With<SequenceWireRight>>,
         Query<&mut Node, With<SequenceWireSplitVisual>>,
         Query<&mut Node, With<SequenceWireJoint>>,
+        Query<&mut Node, With<CoolantGaugeFace>>,
+        Query<&mut Node, With<CoolantGaugeSealedFace>>,
+        Query<&mut Node, With<CoolantGaugeNeedle>>,
     )>,
     mut next_playing: ResMut<NextState<PlayingState>>,
 ) {
@@ -372,6 +479,18 @@ pub fn run_active_minigame(
                     PlaybackSettings::DESPAWN.with_volume(Volume::Linear(settings.sfx_volume)),
                 ));
             }
+            MinigameAudioCue::CoolantVent => {
+                commands.spawn((
+                    AudioPlayer::new(assets.load(GAUGE_HISS_PATH)),
+                    PlaybackSettings::DESPAWN.with_volume(Volume::Linear(settings.sfx_volume)),
+                ));
+            }
+            MinigameAudioCue::CoolantSealed => {
+                commands.spawn((
+                    AudioPlayer::new(assets.load(GAUGE_SEALED_TING_PATH)),
+                    PlaybackSettings::DESPAWN.with_volume(Volume::Linear(settings.sfx_volume)),
+                ));
+            }
         }
     }
 
@@ -391,15 +510,15 @@ pub fn run_active_minigame(
             let base_right = base_left + WIRES_RIGHT_START;
             let split_offset = visual.separation * 0.5;
 
-            for mut left in &mut wire_nodes.p0() {
+            for mut left in &mut visual_nodes.p0() {
                 left.left = px(base_left - split_offset);
             }
 
-            for mut right in &mut wire_nodes.p1() {
+            for mut right in &mut visual_nodes.p1() {
                 right.left = px(base_right + split_offset);
             }
 
-            for mut split in &mut wire_nodes.p2() {
+            for mut split in &mut visual_nodes.p2() {
                 split.display = if visual.jointed {
                     Display::None
                 } else {
@@ -407,12 +526,38 @@ pub fn run_active_minigame(
                 };
             }
 
-            for mut joint in &mut wire_nodes.p3() {
+            for mut joint in &mut visual_nodes.p3() {
                 joint.display = if visual.jointed {
                     Display::Flex
                 } else {
                     Display::None
                 };
+            }
+        }
+        MinigameVisualState::CoolantGauge(visual) => {
+            let status = active.game.status();
+            for mut text in &mut status_labels {
+                **text = status.clone();
+            }
+
+            for mut face in &mut visual_nodes.p4() {
+                face.display = if visual.sealed {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+            }
+
+            for mut sealed in &mut visual_nodes.p5() {
+                sealed.display = if visual.sealed {
+                    Display::Flex
+                } else {
+                    Display::None
+                };
+            }
+
+            for mut needle in &mut visual_nodes.p6() {
+                needle.left = px(needle_left(visual.fill));
             }
         }
     }
@@ -437,5 +582,76 @@ fn new_minigame(id: MinigameId) -> Box<dyn MinigameInstance> {
     match id {
         MinigameId::TapChallenge => Box::new(tap_challenge::TapChallenge::new()),
         MinigameId::BrokenWire => Box::new(broken_wire::BrokenWire::new()),
+        MinigameId::CoolantValve => Box::new(coolant_valve::CoolantValve::new()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CHALLENGE_ASSETS: [&str; 8] = [
+        WIRES_BROKEN_PATH,
+        WIRES_JOINT_PATH,
+        WIRES_ZAP_PATH,
+        GAUGE_PATH,
+        GAUGE_SEALED_PATH,
+        GAUGE_NEEDLE_PATH,
+        GAUGE_HISS_PATH,
+        GAUGE_SEALED_TING_PATH,
+    ];
+
+    /// A renamed asset does not break the build — it just loads nothing, in a
+    /// room the player has to walk to before they find out.
+    #[test]
+    fn every_challenge_asset_is_where_it_is_asked_for() {
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+
+        for path in CHALLENGE_ASSETS {
+            assert!(
+                assets.join(path).exists(),
+                "no asset at assets/{path} — was it renamed?"
+            );
+        }
+    }
+
+    #[test]
+    fn every_challenge_can_be_opened() {
+        for id in MinigameId::ALL {
+            let game = new_minigame(id);
+
+            assert!(!game.title().is_empty(), "{id:?} has no title");
+            assert!(!game.status().is_empty(), "{id:?} has no status");
+        }
+    }
+
+    #[test]
+    fn the_needle_stays_inside_the_gauge_canvas() {
+        for fill in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let left = needle_left(fill);
+
+            assert!(left >= 0.0, "the needle hangs off the empty end at {fill}");
+            assert!(
+                left + GAUGE_NEEDLE_WIDTH <= GAUGE_CANVAS_WIDTH,
+                "the needle hangs off the stop at {fill}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_needle_travels_the_painted_track() {
+        let centre = |fill: f32| needle_left(fill) + GAUGE_NEEDLE_WIDTH * 0.5;
+
+        assert!((centre(0.0) - GAUGE_TRACK_LEFT * GAUGE_WIDTH).abs() < 0.5);
+        assert!(
+            (centre(1.0) - (GAUGE_TRACK_LEFT + GAUGE_TRACK_WIDTH) * GAUGE_WIDTH).abs() < 0.5,
+            "the needle does not reach the end of the track"
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_reading_is_pinned_to_the_gauge() {
+        assert_eq!(needle_left(-3.0), needle_left(0.0));
+        assert_eq!(needle_left(9.0), needle_left(1.0));
     }
 }
