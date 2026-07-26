@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use crate::settings::Settings;
 
-const TRACK_PATH: &str = "music-for-an-action-movie-scene-120bpm-loop.ogg";
+const TRACK_PATH: &str = "music.ogg";
 
 /// The looping background track. Lives for exactly one run: spawned on entering
 /// [`GameState::Playing`](crate::state::GameState::Playing) and despawned on
