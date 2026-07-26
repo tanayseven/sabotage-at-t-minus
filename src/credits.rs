@@ -21,7 +21,7 @@ const ROLE_NUDGE: f32 = (NAME_FONT - ROLE_FONT) * 0.6 / 2.0;
 // TODO: replace with the real names before shipping.
 
 /// Each role owns a list of names, printed one per line under a single label.
-const CREDITS: [(&str, &[&str]); 2] = [
+const CREDITS: [(&str, &[&str]); 3] = [
     (
         "Programming",
         &[
@@ -32,6 +32,7 @@ const CREDITS: [(&str, &[&str]); 2] = [
         ],
     ),
     ("Art", &["Kabir Siddharth"]),
+    ("Music", &["Param Siddharth"]),
 ];
 
 const COLOPHON: [&str; 2] = [
