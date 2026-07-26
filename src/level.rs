@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-use crate::config::{DESIGN_HEIGHT, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
+use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, INTERIOR_ZOOM, PLATFORM_HEIGHT, WALL_THICKNESS};
 use crate::door::Door;
 use crate::ladder::{LADDER_CLEARANCE, Ladder};
 use crate::minigames::{CompletedMinigame, MINIGAME_COUNT, MinigameOutcome};
@@ -359,6 +359,18 @@ impl Level {
     pub fn camera(self) -> CameraMode {
         self.config().camera
     }
+
+    /// The stretch of level the hull lining is papered over. Taken from what the
+    /// camera can reach rather than from the hull itself, so a pan that runs to
+    /// the edge of the level shows plating rather than the void behind it.
+    pub fn interior(self) -> Rect {
+        match self.camera() {
+            CameraMode::Follow { bounds, .. } => bounds,
+            CameraMode::Fixed => {
+                Rect::from_center_size(Vec2::ZERO, Vec2::new(DESIGN_WIDTH, DESIGN_HEIGHT))
+            }
+        }
+    }
 }
 
 /// Inserted rather than assigned, so change detection fires — and the camera
@@ -588,14 +600,12 @@ mod tests {
                     Startup,
                     |mut commands: Commands,
                      assets: Res<AssetServer>,
-                     mut images: ResMut<Assets<Image>>,
                      panel: Res<Panel>,
                      puzzles: Res<RocketPuzzles>,
                      progress: Res<LevelProgress>| {
                         build_level(
                             &mut commands,
                             &assets,
-                            &mut images,
                             Level::Rocket,
                             RunState {
                                 puzzles: *puzzles,

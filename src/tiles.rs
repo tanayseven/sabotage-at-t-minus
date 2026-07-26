@@ -68,6 +68,19 @@ pub fn load_pixel_art(assets: &AssetServer, path: &'static str) -> Handle<Image>
         .load(path)
 }
 
+/// Holds a module to the art it asks for by name. A renamed file does not break
+/// the build — the load simply yields nothing, and the first anyone knows of it
+/// is a screen with a hole in it. Shared so each module's own test is one line.
+#[cfg(test)]
+pub fn assert_art_exists(path: &str) {
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+
+    assert!(
+        assets.join(path).exists(),
+        "no asset at assets/{path} — was it renamed?"
+    );
+}
+
 pub fn load_tiles(assets: &AssetServer) -> TileSet {
     TileSet {
         centre: load_pixel_art(assets, CENTRE_TILE),
@@ -118,5 +131,16 @@ impl TileRun {
                     .with_rotation(Quat::from_rotation_z(rotation)),
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CAP_TILE, CENTRE_TILE, assert_art_exists};
+
+    #[test]
+    fn the_wall_tiles_are_where_they_are_asked_for() {
+        assert_art_exists(CENTRE_TILE);
+        assert_art_exists(CAP_TILE);
     }
 }

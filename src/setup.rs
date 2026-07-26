@@ -13,7 +13,7 @@ use crate::props::spawn_props;
 use crate::puzzles::RocketPuzzles;
 use crate::tiles::load_tiles;
 use crate::ui::spawn_hud;
-use crate::wall::spawn_wall_run;
+use crate::wall::{spawn_hull_lining, spawn_wall_run};
 
 /// Marks the parts of a run that outlive the level it is on — the HUD. Quitting
 /// to the menu clears it without disturbing the camera and backdrop spawned at
@@ -21,15 +21,9 @@ use crate::wall::spawn_wall_run;
 #[derive(Component, Clone)]
 pub struct GameEntity;
 
-pub fn setup(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    level: Res<Level>,
-    time: Res<Time>,
-) {
+pub fn setup(mut commands: Commands, assets: Res<AssetServer>, level: Res<Level>, time: Res<Time>) {
     let run = reset_run_state(&mut commands, *level, &time);
-    build_level(&mut commands, &assets, &mut images, *level, run);
+    build_level(&mut commands, &assets, *level, run);
     spawn_hud(&mut commands, *level, &run.panel, &run.progress);
 }
 
@@ -65,15 +59,10 @@ fn reset_run_state(commands: &mut Commands, level: Level, time: &Time) -> RunSta
 }
 
 /// Everything belonging to one level, built from that level's own layout.
-pub fn build_level(
-    commands: &mut Commands,
-    assets: &AssetServer,
-    images: &mut Assets<Image>,
-    level: Level,
-    run: RunState,
-) {
+pub fn build_level(commands: &mut Commands, assets: &AssetServer, level: Level, run: RunState) {
     let tiles = load_tiles(assets);
 
+    spawn_hull_lining(commands, assets, level.interior(), LevelEntity);
     spawn_wall_run(commands, &tiles, level.walls(), LevelEntity);
     spawn_platforms(commands, &tiles, level.platforms(), LevelEntity);
     spawn_ladders(commands, assets, level.ladders(), LevelEntity);
@@ -87,7 +76,7 @@ pub fn build_level(
     );
     spawn_panel(commands, &run.panel, level, LevelEntity);
     spawn_props(commands, level.crates(), LevelEntity);
-    spawn_portals(commands, images, run.puzzles, LevelEntity);
+    spawn_portals(commands, assets, run.puzzles, LevelEntity);
     spawn_player(commands, assets, level.player_spawn(), LevelEntity);
 }
 

@@ -6,12 +6,12 @@
 
 use bevy::prelude::*;
 
-use crate::config::{DESIGN_HEIGHT, PLATFORM_HEIGHT, PLAYER_HEIGHT, WALL_THICKNESS};
+use crate::config::{DESIGN_HEIGHT, DESIGN_WIDTH, PLATFORM_HEIGHT, PLAYER_HEIGHT, WALL_THICKNESS};
 use crate::platform::Platform;
 use crate::player::{Player, spawn_player};
 use crate::state::GameState;
 use crate::tiles::{Axis, TileRun, TileSet, load_tiles};
-use crate::ui::{ACCENT, MUTED_TEXT};
+use crate::ui::ACCENT;
 use crate::wall::spawn_walls;
 
 const ROCKET_SPRITE: &str = "rocket.png";
@@ -26,6 +26,22 @@ const HATCH_FROM_TOP: f32 = 0.3135;
 const ROCKET_HEIGHT: f32 = 520.0;
 const ROCKET_WIDTH: f32 = ROCKET_HEIGHT * ROCKET_PIXELS.x / ROCKET_PIXELS.y;
 const ROCKET_X: f32 = 400.0;
+
+/// The country the pad stands in, behind everything on the screen. Drawn at the
+/// size of the screen itself, in its own colours — it is the backdrop, so
+/// nothing is done to it beyond the scaling.
+const SKY_SPRITE: &str = "rocket-background.png";
+const SKY_PIXELS: Vec2 = Vec2::new(1920.0, 1080.0);
+const SKY_SIZE: Vec2 = Vec2::new(DESIGN_WIDTH, DESIGN_HEIGHT);
+/// The art and the screen are both 16:9, so the fit above is exact. Cross
+/// multiplied rather than divided so the two ratios compare without rounding.
+const _: () = assert!(SKY_PIXELS.x * SKY_SIZE.y == SKY_SIZE.x * SKY_PIXELS.y);
+const SKY_Z: f32 = -9.0;
+/// The pad's hints are read off the sky rather than off the dark backdrop the
+/// rest of the game's text sits on, so they are dark where [`crate::ui::MUTED_TEXT`]
+/// is pale. Near-black slate rather than true black: it has to hold up over the
+/// white of the clouds and the blue behind them both.
+const HINT_TEXT: Color = Color::srgb(0.11, 0.15, 0.24);
 
 /// Behind the bridge and the player, so the deck reads as running *into* the
 /// rocket rather than stopping short of it.
@@ -70,11 +86,24 @@ pub struct LaunchpadEntity;
 pub fn spawn_launchpad(mut commands: Commands, assets: Res<AssetServer>) {
     let tiles = load_tiles(&assets);
 
+    spawn_sky(&mut commands, &assets);
     spawn_walls(&mut commands, &tiles, LaunchpadEntity);
     spawn_rocket(&mut commands, &assets);
     spawn_gantry(&mut commands, &tiles);
     spawn_player(&mut commands, &assets, PLAYER_START, LaunchpadEntity);
     spawn_launchpad_hud(&mut commands);
+}
+
+fn spawn_sky(commands: &mut Commands, assets: &AssetServer) {
+    commands.spawn((
+        LaunchpadEntity,
+        Sprite {
+            image: assets.load(SKY_SPRITE),
+            custom_size: Some(SKY_SIZE),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, SKY_Z),
+    ));
 }
 
 fn spawn_rocket(commands: &mut Commands, assets: &AssetServer) {
@@ -156,7 +185,7 @@ fn spawn_launchpad_hud(commands: &mut Commands) {
                     font_size: FontSize::Px(22.0),
                     ..default()
                 },
-                TextColor(MUTED_TEXT),
+                TextColor(HINT_TEXT),
             ));
             parent.spawn((
                 Text::new("Esc - back to menu"),
@@ -164,7 +193,7 @@ fn spawn_launchpad_hud(commands: &mut Commands) {
                     font_size: FontSize::Px(18.0),
                     ..default()
                 },
-                TextColor(MUTED_TEXT),
+                TextColor(HINT_TEXT),
             ));
         });
 }
@@ -195,5 +224,17 @@ pub fn leave_launchpad(
 pub fn despawn_launchpad(mut commands: Commands, entities: Query<Entity, With<LaunchpadEntity>>) {
     for entity in &entities {
         commands.entity(entity).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ROCKET_SPRITE, SKY_SPRITE};
+    use crate::tiles::assert_art_exists;
+
+    #[test]
+    fn the_pad_s_art_is_where_it_is_asked_for() {
+        assert_art_exists(SKY_SPRITE);
+        assert_art_exists(ROCKET_SPRITE);
     }
 }
